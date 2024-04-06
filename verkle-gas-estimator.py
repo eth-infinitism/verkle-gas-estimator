@@ -4,12 +4,16 @@ import sys
 import os
 import re
 
+
 # Function to run cast command and return output
 def run_cast(command):
     return subprocess.check_output(command, shell=True, text=True)
+
+
 dumpall = False
-debug=os.environ.get("DEBUG") is not None
+debug = os.environ.get("DEBUG") is not None
 cast_executable = "/Users/dror/Downloads/aa/foundry/target/release/cast"
+
 
 def usage():
     print(f"usage: {sys.argv[0]} [options] {{tx|file}} [-r network]")
@@ -23,6 +27,7 @@ def usage():
     print("         The file should be the output of `cast run -t --quick {tx} > FILE`")
     sys.exit(1)
 
+
 args = sys.argv[1:]
 if args == []:
     args = ["-h"]
@@ -34,12 +39,11 @@ while re.match("^-", args[0]):
     elif opt == "-c":
         cast_executable = args.pop(0)
     elif opt == "-a":
-        dumpall=True
+        dumpall = True
     elif opt == "-d":
-        debug=True
+        debug = True
     else:
         raise Exception("Unknown option " + opt)
-
 
 # Check if file exists, read file instead of running cast run
 if os.path.exists(args[0]):
@@ -59,7 +63,7 @@ for line in output.splitlines():
     if "CREATE CALL:" in line:
         continue
     if "SM CALL" in line:
-        (code_address,) = re.search("code_address: (\w+)",line).groups()
+        (code_address,) = re.search("code_address: (\w+)", line).groups()
         continue
     if "depth:" in line:
         #    ( $depth, $pc, $opcode ) = /depth:(\d+).*PC:(\d+),.*OPCODE: "(\w+)"/;
@@ -91,4 +95,3 @@ for addr in slots:
         print(f"{addr} {num_slots} (max= {max_slot}), all={','.join(map(str, slots[addr].keys()))}")
     else:
         print(f"{addr} {num_slots} (max= {max_slot})")
-
