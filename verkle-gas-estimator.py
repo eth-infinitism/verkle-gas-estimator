@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-import subprocess
-import sys
+import json
 import os
 import re
+import subprocess
+import sys
 
 
 # Function to run cast command and return output
@@ -10,9 +11,21 @@ def run_cast(command):
     return subprocess.check_output(command, shell=True, text=True)
 
 
+names = {}
+
+
+def get_name(address):
+    if address not in names or names[address] is None:
+        return address
+    else:
+        shortAddress = "(" + address[:8] + "..." + address[38:] + ")"
+        return names[address] + " " + shortAddress
+
+
 dumpall = False
 debug = os.environ.get("DEBUG") is not None
 cast_executable = "cast"
+
 
 def usage():
     print(f"usage: {sys.argv[0]} [options] {{tx|file}} [-r network]")
@@ -20,6 +33,7 @@ def usage():
     print("Options:")
     print("  -a dump all chunks, not only count/max")
     print("  -c {cast-path} use specified 'cast' implementation ")
+    print("  -contracts match contract addresses with names in given JSON file")
     print("Parameters:")
     print("  tx - tx to read. It (and all following params) are passed directly into `cast run -t --quick`")
     print("  file - if the first param is an existing file, it is read instead.")
@@ -41,6 +55,10 @@ while re.match("^-", args[0]):
         dumpall = True
     elif opt == "-d":
         debug = True
+    elif opt == "-contracts":
+        f = open(args.pop(0))
+        file = json.load(f)
+        names = file["contracts"]
     else:
         raise Exception("Unknown option " + opt)
 
@@ -90,7 +108,10 @@ print("verkle slots used by each address (slot=pc//31)")
 for addr in chunks:
     max_slot = max(chunks[addr].keys())
     num_slots = len(chunks[addr])
+
+    name = get_name(addr)
+
     if dumpall:
-        print(f"{addr} {num_slots} (max= {max_slot}), all={','.join(map(str, chunks[addr].keys()))}")
+        print(f"{name} {num_slots} (max= {max_slot}), all={','.join(map(str, chunks[addr].keys()))}")
     else:
-        print(f"{addr} {num_slots} (max= {max_slot})")
+        print(f"{name} {num_slots} (max= {max_slot})")
