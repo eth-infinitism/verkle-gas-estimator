@@ -17,9 +17,9 @@ cast_executable = "/Users/dror/Downloads/aa/foundry/target/release/cast"
 
 def usage():
     print(f"usage: {sys.argv[0]} [options] {{tx|file}} [-r network]")
-    print("count storage 'slots' (blocks of 31 bytes) of each contract in a transaction.")
+    print("count storage 'chunks' (blocks of 31 bytes) of each contract in a transaction.")
     print("Options:")
-    print("  -a dump all slots, not only count/max")
+    print("  -a dump all chunks, not only count/max")
     print("  -c {cast-path} use specified 'cast' implementation ")
     print("Parameters:")
     print("  tx - tx to read. It (and all following params) are passed directly into `cast run -t --quick`")
@@ -55,7 +55,7 @@ else:
 
 addrs = []
 lastdepth = 0
-slots = {}
+chunks = {}
 
 for line in output.splitlines():
     if "Traces:" in line:
@@ -78,20 +78,20 @@ for line in output.splitlines():
                 addrs.pop()
                 addr = addrs[-1]
             pc = int(pc)
-            slot = pc // 31
-            if addr not in slots:
-                slots[addr] = {}
-            slots[addr][slot] = slots[addr].get(slot, 0) + 1
+            chunk = pc // 31
+            if addr not in chunks:
+                chunks[addr] = {}
+            chunks[addr][chunk] = chunks[addr].get(chunk, 0) + 1
             if debug:
-                print(f"{addr}, {slot}, {pc}, {opcode}")
+                print(f"{addr}, {chunk}, {pc}, {opcode}")
             lastdepth = depth
 
 print("verkle slots used by each address (slot=pc//31)")
 # Dump number of unique slots used by each address
-for addr in slots:
-    max_slot = max(slots[addr].keys())
-    num_slots = len(slots[addr])
+for addr in chunks:
+    max_slot = max(chunks[addr].keys())
+    num_slots = len(chunks[addr])
     if dumpall:
-        print(f"{addr} {num_slots} (max= {max_slot}), all={','.join(map(str, slots[addr].keys()))}")
+        print(f"{addr} {num_slots} (max= {max_slot}), all={','.join(map(str, chunks[addr].keys()))}")
     else:
         print(f"{addr} {num_slots} (max= {max_slot})")
