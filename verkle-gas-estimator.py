@@ -12,8 +12,7 @@ def run_cast(command):
 
 dumpall = False
 debug = os.environ.get("DEBUG") is not None
-cast_executable = "/Users/dror/Downloads/aa/foundry/target/release/cast"
-
+cast_executable = "cast"
 
 def usage():
     print(f"usage: {sys.argv[0]} [options] {{tx|file}} [-r network]")
