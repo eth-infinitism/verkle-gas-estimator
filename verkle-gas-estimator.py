@@ -22,6 +22,17 @@ def get_name(address):
         return names[address] + " " + shortAddress
 
 
+def calculate_gas_effect(contract_chunks, contract_slots):
+    cost = 0
+    branches_access_events = {0: True}  # consider "main code" cost to be free
+    for [contract_chunk, _] in contract_chunks.items():
+        cost += 200  # cost per chunk
+        branch_id = contract_chunk // 256
+        if branch_id not in branches_access_events:
+            branches_access_events[branch_id] = True
+            cost += 1900  # cost per branch
+    return cost
+
 dumpall = False
 debug = os.environ.get("DEBUG") is not None
 cast_executable = "cast"
@@ -103,15 +114,24 @@ for line in output.splitlines():
                 print(f"{addr}, {chunk}, {pc}, {opcode}")
             lastdepth = depth
 
-print("verkle slots used by each address (slot=pc//31)")
+print("Verkle chunks used by each address (slot=pc//31)")
+print("")
+
+total_gas_effect = 0
 # Dump number of unique slots used by each address
 for addr in chunks:
-    max_slot = max(chunks[addr].keys())
-    num_slots = len(chunks[addr])
+    max_chunk = max(chunks[addr].keys())
+    num_chunks = len(chunks[addr])
 
     name = get_name(addr)
+    gas_effect = calculate_gas_effect(chunks[addr], [])
+    total_gas_effect += gas_effect
 
     if dumpall:
-        print(f"{name} {num_slots} (max= {max_slot}), all={','.join(map(str, chunks[addr].keys()))}")
+        print(f"{name} {num_chunks} (max= {max_chunk}) [gas_effect= {gas_effect}], all={','.join(map(str, chunks[addr].keys()))}")
     else:
-        print(f"{name} {num_slots} (max= {max_slot})")
+        print(f"{name} {num_chunks} (max= {max_chunk}) [gas_effect= {gas_effect}]")
+
+print("")
+print("Total Verkle code chunks gas effect = " + str(total_gas_effect))
+
