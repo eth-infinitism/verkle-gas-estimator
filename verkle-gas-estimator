@@ -3,6 +3,10 @@
 # calculate the gas cost of a transaction , if it were
 use List::Util qw( min max );
 
+if ( $ARGV[0] eq "-a" ) {
+    $dumpall=1;
+    shift;
+}
 $args=join " ", @ARGV;
 
 die qq{usage: $0 {tx|file} [-r network]
@@ -59,7 +63,11 @@ foreach $addr ( keys %slots ) {
     # @keys = keys %{$slots{addr}};
     $max  = max(keys %{$slots{$addr}});
     $keys = keys %{$slots{$addr}};
-    printf "%s %5d (max=%4d)\n",$addr,$keys, $max;
+    if ($dumpall) {
+        printf "%s %5d (max=%4d), all=%s\n",$addr,$keys, $max, join(",",keys %{$slots{$addr}});
+    } else {
+        printf "%s %5d (max=%4d)\n",$addr,$keys, $max, join(",",keys %{$slots{$addr}});
+    }
 }
 
 __END__
