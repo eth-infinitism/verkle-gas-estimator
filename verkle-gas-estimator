@@ -1,77 +1,94 @@
-#!/usr/bin/perl
-#verkle gas estimator
-# calculate the gas cost of a transaction , if it were
-use List::Util qw( min max );
+#!/usr/bin/env python3
+import subprocess
+import sys
+import os
+import re
 
-if ( $ARGV[0] eq "-a" ) {
-    $dumpall=1;
-    shift;
-}
-$args=join " ", @ARGV;
+# Function to run cast command and return output
+def run_cast(command):
+    return subprocess.check_output(command, shell=True, text=True)
+dumpall = False
+debug=os.environ.get("DEBUG") is not None
+cast_executable = "/Users/dror/Downloads/aa/foundry/target/release/cast"
 
-die qq{usage: $0 {tx|file} [-r network]
-count storage "slots" (blocks of 31 bytes) of each contract in a transaction.
-Parameters:
-	tx - tx to read. It (and all following params) are passed directly into `cast run -t --quick`
-	file - if the first param is an existing file, it is read instead.
-		The file should be the output of `cast run -t --quick {tx} > FILE`
-} unless $args;
+def usage():
+    print(f"usage: {sys.argv[0]} [options] {{tx|file}} [-r network]")
+    print("count storage 'slots' (blocks of 31 bytes) of each contract in a transaction.")
+    print("Options:")
+    print("  -a dump all slots, not only count/max")
+    print("  -c {cast-path} use specified 'cast' implementation ")
+    print("Parameters:")
+    print("  tx - tx to read. It (and all following params) are passed directly into `cast run -t --quick`")
+    print("  file - if the first param is an existing file, it is read instead.")
+    print("         The file should be the output of `cast run -t --quick {tx} > FILE`")
+    sys.exit(1)
 
-$CAST="/Users/dror/Downloads/aa/foundry/target/release/cast";
+args = sys.argv[1:]
+if args == []:
+    args = ["-h"]
 
-if ( -r $args ) {
-    #read file instead of running cast run"
-    open RUN, $args;
+while re.match("^-", args[0]):
+    opt = args.pop(0)
+    if opt == "-h":
+        usage()
+    elif opt == "-c":
+        cast_executable = args.pop(0)
+    elif opt == "-a":
+        dumpall=True
+    elif opt == "-d":
+        debug=True
+    else:
+        raise Exception("Unknown option " + opt)
 
-} else {
-    open RUN, "$CAST run -t --quick $args |";
-}
 
-@addrs=();
-$lastdepth=0;
-while (<RUN>) {
-    last if /Traces:/;
-    next if /CREATE CALL:/;
-    if ( /SM CALL.*code_address: (\w+)/ ) {
-        $code_address = $1;
-        # used in next "depth" check, below 
-        # (ignored if no depth change, i.e. precompile)
-        next;
-    }
+# Check if file exists, read file instead of running cast run
+if os.path.exists(args[0]):
+    with open(args[0], 'r') as f:
+        output = f.read()
+else:
+    argStr = " ".join(args)
+    output = run_cast(f"{cast_executable} run -t --quick {argStr}")
 
-    ( $depth, $pc, $opcode ) = /depth:(\d+).*PC:(\d+),.*OPCODE: "(\w+)"/;
-    die "invalid line: $_" unless $depth;
-    if ( $depth ) {
-        if ( $depth == $lastdepth +1 ) {
-            push @addrs, $code_address;
-            $addr = $addrs[$#addrs];
-        }
-        if ( $depth == $lastdepth-1 ) {
-            pop @addrs;
-            $addr = $addrs[$#addrs];
-        }
-        $slots{$addr}{int($pc/31)} ++;
-        printf "%s, %5d, %5d, %s\n", $addr, int($pc/31), $pc, $opcode if $ENV{DEBUG};
-        $lastdepth = $depth;
-        next;
-    }
-}
+addrs = []
+lastdepth = 0
+slots = {}
 
-print "verkle slots used by each address (slot=pc//31)\n";
-#dump # of unique slots used by each address
-foreach $addr ( keys %slots ) {
-    # @keys = keys %{$slots{addr}};
-    $max  = max(keys %{$slots{$addr}});
-    $keys = keys %{$slots{$addr}};
-    if ($dumpall) {
-        printf "%s %5d (max=%4d), all=%s\n",$addr,$keys, $max, join(",",keys %{$slots{$addr}});
-    } else {
-        printf "%s %5d (max=%4d)\n",$addr,$keys, $max, join(",",keys %{$slots{$addr}});
-    }
-}
+for line in output.splitlines():
+    if "Traces:" in line:
+        break
+    if "CREATE CALL:" in line:
+        continue
+    if "SM CALL" in line:
+        (code_address,) = re.search("code_address: (\w+)",line).groups()
+        continue
+    if "depth:" in line:
+        #    ( $depth, $pc, $opcode ) = /depth:(\d+).*PC:(\d+),.*OPCODE: "(\w+)"/;
 
-__END__
-cast run --quick 0x093cce8d9c5e2d1c60b6ca19013c36d7de4dfb28df9ba27371fc7ea694a3d6d7 -t | tee tx-0x093cce8d9c5e2d1c60b6ca19013c36d7de4dfb28df9ba27371fc7ea694a3d6d7.txt
+        (depth, pc, opcode) = re.search("depth:(\d+).*PC:(\d+).*OPCODE: \"(\w+)\"", line).groups()
+        if depth:
+            depth = int(depth)
+            if depth == lastdepth + 1:
+                addrs.append(code_address)
+                addr = addrs[-1]
+            if depth == lastdepth - 1:
+                addrs.pop()
+                addr = addrs[-1]
+            pc = int(pc)
+            slot = pc // 31
+            if addr not in slots:
+                slots[addr] = {}
+            slots[addr][slot] = slots[addr].get(slot, 0) + 1
+            if debug:
+                print(f"{addr}, {slot}, {pc}, {opcode}")
+            lastdepth = depth
 
-SM CALL:   0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789,context:CallContext { address: 0x5ff137d4b0fdcd49dca30c7cf57e578a026d2789, caller: 0x226a22889b7f842fb1426b3e81130b461abda8a5, code_address: 0x5ff137d4b0fdcd49dca30c7cf57e578a026d2789, apparent_value: 0x0_U256, scheme: Call }, is_static:false, transfer:Transfer { source: 0x226a22889b7f842fb1426b3e81130b461abda8a5, target: 0x5ff137d4b0fdcd49dca30c7cf57e578a026d2789, value: 0x0_U256 }, input_size:1220
-depth:1, PC:0, gas:0x36a5a(223834), OPCODE: "PUSH1"(96)  refund:0x0(0) Stack:[], Data size:0, Data: 0x
+print("verkle slots used by each address (slot=pc//31)")
+# Dump number of unique slots used by each address
+for addr in slots:
+    max_slot = max(slots[addr].keys())
+    num_slots = len(slots[addr])
+    if dumpall:
+        print(f"{addr} {num_slots} (max= {max_slot}), all={','.join(map(str, slots[addr].keys()))}")
+    else:
+        print(f"{addr} {num_slots} (max= {max_slot})")
+
