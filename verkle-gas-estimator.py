@@ -91,12 +91,19 @@ for line in output.splitlines():
     if "CREATE CALL:" in line:
         continue
     if "SM CALL" in line:
-        (code_address,) = re.search("code_address: (\w+)", line).groups()
+        (context_address, code_address,) = re.search("address: (\w+).*code_address: (\w+)", line).groups()
         continue
     if "depth:" in line:
         #    ( $depth, $pc, $opcode ) = /depth:(\d+).*PC:(\d+),.*OPCODE: "(\w+)"/;
 
-        (depth, pc, opcode) = re.search("depth:(\d+).*PC:(\d+).*OPCODE: \"(\w+)\"", line).groups()
+        (depth, pc, opcode, stackStr) = re.search("depth:(\d+).*PC:(\d+).*OPCODE: \"(\w+)\".*Stack:\[(.*)\]", line).groups()
+        stack = stackStr.replace("_U256", "").split(", ")
+        if opcode == "SSTORE":
+            (val, storageSlot) = stack[-2:]
+            if debug: print (f"{opcode} context={context_address} slot={storageSlot} val={val}")
+        if opcode == "SLOAD":
+            (storageSlot,) = stack[-1:]
+            if debug: print (f"{opcode} context={context_address} slot={storageSlot}")
         if depth:
             depth = int(depth)
             if depth == lastdepth + 1:
@@ -111,7 +118,7 @@ for line in output.splitlines():
                 chunks[addr] = {}
             chunks[addr][chunk] = chunks[addr].get(chunk, 0) + 1
             if debug:
-                print(f"{addr}, {chunk}, {pc}, {opcode}")
+                print(f"{addr}, {chunk}, {pc}, {opcode}, {stack[-2:]}")
             lastdepth = depth
 
 print("Verkle chunks used by each address (slot=pc//31)")
