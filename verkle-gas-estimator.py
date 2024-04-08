@@ -22,16 +22,46 @@ def get_name(address):
         return names[address] + " " + shortAddress
 
 
+HEADER_STORAGE_OFFSET = 64
+CODE_OFFSET = 128
+VERKLE_NODE_WIDTH = 256
+MAIN_STORAGE_OFFSET = 256 ** 31
+
+WITNESS_BRANCH_COST = 1900
+WITNESS_CHUNK_COST = 200
+
+COLD_SLOAD_COST = 2100
+COLD_ACCOUNT_ACCESS_COST = 2600
+
+
 def calculate_gas_effect(contract_chunks, contract_slots):
-    cost = 0
+    code_cost = 0
+    # code_cost -= COLD_ACCOUNT_ACCESS_COST  # uncomment if Verkle replaces EIP-2929 warm/cold gas pricing
+    storage_cost = 0
     branches_access_events = {0: True}  # consider "main code" cost to be free
     for [contract_chunk, _] in contract_chunks.items():
-        cost += 200  # cost per chunk
+        code_cost += WITNESS_CHUNK_COST
         branch_id = contract_chunk // 256
         if branch_id not in branches_access_events:
             branches_access_events[branch_id] = True
-            cost += 1900  # cost per branch
-    return cost
+            code_cost += WITNESS_BRANCH_COST
+
+    for [storage_key_hex, _] in contract_slots.items():
+        # storage_cost -= COLD_SLOAD_COST  # uncomment if Verkle replaces EIP-2929 warm/cold gas pricing
+        storage_cost += WITNESS_CHUNK_COST
+        storage_key = int(storage_key_hex, 16)
+        # special storage for slots 0..64
+        if storage_key < (CODE_OFFSET - HEADER_STORAGE_OFFSET):
+            pos = HEADER_STORAGE_OFFSET + storage_key
+        else:
+            pos = MAIN_STORAGE_OFFSET + storage_key
+        branch_id = pos // VERKLE_NODE_WIDTH
+        if branch_id not in branches_access_events:
+            branches_access_events[branch_id] = True
+            storage_cost += WITNESS_BRANCH_COST
+
+    return [code_cost, storage_cost]
+
 
 dumpall = False
 debug = os.environ.get("DEBUG") is not None
@@ -84,6 +114,7 @@ else:
 addrs = []
 lastdepth = 0
 chunks = {}
+slots = {}
 
 for line in output.splitlines():
     if "Traces:" in line:
@@ -96,14 +127,21 @@ for line in output.splitlines():
     if "depth:" in line:
         #    ( $depth, $pc, $opcode ) = /depth:(\d+).*PC:(\d+),.*OPCODE: "(\w+)"/;
 
-        (depth, pc, opcode, stackStr) = re.search("depth:(\d+).*PC:(\d+).*OPCODE: \"(\w+)\".*Stack:\[(.*)\]", line).groups()
+        (depth, pc, opcode, stackStr) = re.search("depth:(\d+).*PC:(\d+).*OPCODE: \"(\w+)\".*Stack:\[(.*)\]",
+                                                  line).groups()
         stack = stackStr.replace("_U256", "").split(", ")
         if opcode == "SSTORE":
             (val, storageSlot) = stack[-2:]
-            if debug: print (f"{opcode} context={context_address} slot={storageSlot} val={val}")
+            if context_address not in slots:
+                slots[context_address] = {}
+            slots[context_address][storageSlot] = True
+            if debug: print(f"{opcode} context={context_address} slot={storageSlot} val={val}")
         if opcode == "SLOAD":
             (storageSlot,) = stack[-1:]
-            if debug: print (f"{opcode} context={context_address} slot={storageSlot}")
+            if context_address not in slots:
+                slots[context_address] = {}
+            slots[context_address][storageSlot] = True
+            if debug: print(f"{opcode} context={context_address} slot={storageSlot}")
         if depth:
             depth = int(depth)
             if depth == lastdepth + 1:
@@ -117,8 +155,8 @@ for line in output.splitlines():
             if addr not in chunks:
                 chunks[addr] = {}
             chunks[addr][chunk] = chunks[addr].get(chunk, 0) + 1
-            if debug:
-                print(f"{addr}, {chunk}, {pc}, {opcode}, {stack[-2:]}")
+            # if debug:
+            #     print(f"{addr}, {chunk}, {pc}, {opcode}, {stack[-2:]}")
             lastdepth = depth
 
 print("Verkle chunks used by each address (slot=pc//31)")
@@ -131,14 +169,18 @@ for addr in chunks:
     num_chunks = len(chunks[addr])
 
     name = get_name(addr)
-    gas_effect = calculate_gas_effect(chunks[addr], [])
-    total_gas_effect += gas_effect
+    addr_slots = {}
+    if addr in slots:
+        addr_slots = slots[addr]
+    [addr_code_cost, addr_storage_cost] = calculate_gas_effect(chunks[addr], addr_slots)
+    total_gas_effect += addr_code_cost
+    total_gas_effect += addr_storage_cost
 
     if dumpall:
-        print(f"{name} {num_chunks} (max= {max_chunk}) [gas_effect= {gas_effect}], all={','.join(map(str, chunks[addr].keys()))}")
+        print(
+            f"{name} {num_chunks} (max= {max_chunk}) [verkle: code={addr_code_cost} + storage={addr_storage_cost} ({len(addr_slots)} slots)], all={','.join(map(str, chunks[addr].keys()))}")
     else:
-        print(f"{name} {num_chunks} (max= {max_chunk}) [gas_effect= {gas_effect}]")
+        print(f"{name} {num_chunks} (max= {max_chunk}) [verkle: code={addr_code_cost} + storage={addr_storage_cost} ({len(addr_slots)} slots)]")
 
 print("")
-print("Total Verkle code chunks gas effect = " + str(total_gas_effect))
-
+print("Total Verkle gas effect = " + str(total_gas_effect))
