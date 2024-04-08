@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import math
 import os
 import re
 import subprocess
@@ -8,7 +9,7 @@ import sys
 
 # Function to run cast command and return output
 def run_cast(command):
-    cmd=f"{cast_executable} {command}"
+    cmd = f"{cast_executable} {command}"
     return subprocess.check_output(cmd, shell=True, text=True)
 
 
@@ -33,6 +34,16 @@ WITNESS_CHUNK_COST = 200
 
 COLD_SLOAD_COST = 2100
 COLD_ACCOUNT_ACCESS_COST = 2600
+
+SUBTREE_EDIT_COST = 3000
+CHUNK_EDIT_COST = 500
+CHUNK_FILL_COST = 6200
+
+
+def calculate_deployment_gas_effect(contract_size):
+    code_chunks = contract_size // 31
+    code_subtrees = math.ceil((code_chunks + CODE_OFFSET) / 256)
+    return CHUNK_FILL_COST * code_chunks + SUBTREE_EDIT_COST * code_subtrees
 
 
 def calculate_gas_effect(contract_chunks, contract_slots):
@@ -146,7 +157,7 @@ for line in output.splitlines():
         if depth:
             depth = int(depth)
             if depth == lastdepth + 1:
-                addrs.append( (sm_code_address, sm_context_address) )
+                addrs.append((sm_code_address, sm_context_address))
                 (addr, context_address) = addrs[-1]
             if depth == lastdepth - 1:
                 addrs.pop()
@@ -177,12 +188,12 @@ for addr in chunks:
     total_gas_effect += addr_code_cost
     total_gas_effect += addr_storage_cost
     code_size = run_cast(f"codesize {addr}").strip()
-    code_size_chunks = (int(code_size)+30)//31
-    dumpallSuffix=""
+    code_size_chunks = (int(code_size) + 30) // 31
+    dumpallSuffix = ""
     if dumpall:
-        dumpallSuffix=", all={','.join(map(str, chunks[addr].keys()))}"
+        dumpallSuffix = ", all={','.join(map(str, chunks[addr].keys()))}"
     print(
-        f"{name} code:(size:{code_size}/{code_size_chunks} accessed-chunks:{num_chunks}) storage-slots:{len(addr_slots)} [verkle: code={addr_code_cost} + storage={addr_storage_cost}]"+dumpallSuffix)
+        f"{name} code:(size:{code_size}/{code_size_chunks} accessed-chunks:{num_chunks}) storage-slots:{len(addr_slots)} [verkle: code={addr_code_cost} + storage={addr_storage_cost}]" + dumpallSuffix)
 
 print("")
 print("Total Verkle gas effect = " + str(total_gas_effect))
