@@ -8,7 +8,8 @@ import sys
 
 # Function to run cast command and return output
 def run_cast(command):
-    return subprocess.check_output(command, shell=True, text=True)
+    cmd=f"{cast_executable} {command}"
+    return subprocess.check_output(cmd, shell=True, text=True)
 
 
 names = {}
@@ -109,7 +110,7 @@ if os.path.exists(args[0]):
         output = f.read()
 else:
     argStr = " ".join(args)
-    output = run_cast(f"{cast_executable} run -t --quick {argStr}")
+    output = run_cast(f"run -t --quick {argStr}")
 
 addrs = []
 lastdepth = 0
@@ -175,12 +176,13 @@ for addr in chunks:
     [addr_code_cost, addr_storage_cost] = calculate_gas_effect(chunks[addr], addr_slots)
     total_gas_effect += addr_code_cost
     total_gas_effect += addr_storage_cost
-
+    code_size = run_cast(f"codesize {addr}").strip()
+    code_size_chunks = (int(code_size)+30)//31
+    dumpallSuffix=""
     if dumpall:
-        print(
-            f"{name} {num_chunks} (max= {max_chunk}) [verkle: code={addr_code_cost} + storage={addr_storage_cost} ({len(addr_slots)} slots)], all={','.join(map(str, chunks[addr].keys()))}")
-    else:
-        print(f"{name} {num_chunks} (max= {max_chunk}) [verkle: code={addr_code_cost} + storage={addr_storage_cost} ({len(addr_slots)} slots)]")
+        dumpallSuffix=", all={','.join(map(str, chunks[addr].keys()))}"
+    print(
+        f"{name} code:(size:{code_size}/{code_size_chunks} accessed-chunks:{num_chunks}) storage-slots:{len(addr_slots)} [verkle: code={addr_code_cost} + storage={addr_storage_cost}]"+dumpallSuffix)
 
 print("")
 print("Total Verkle gas effect = " + str(total_gas_effect))
