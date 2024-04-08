@@ -122,7 +122,7 @@ for line in output.splitlines():
     if "CREATE CALL:" in line:
         continue
     if "SM CALL" in line:
-        (context_address, code_address,) = re.search("address: (\w+).*code_address: (\w+)", line).groups()
+        (sm_context_address, sm_code_address) = re.search("address: (\w+).*code_address: (\w+)", line).groups()
         continue
     if "depth:" in line:
         #    ( $depth, $pc, $opcode ) = /depth:(\d+).*PC:(\d+),.*OPCODE: "(\w+)"/;
@@ -145,11 +145,11 @@ for line in output.splitlines():
         if depth:
             depth = int(depth)
             if depth == lastdepth + 1:
-                addrs.append(code_address)
-                addr = addrs[-1]
+                addrs.append( (sm_code_address, sm_context_address) )
+                (addr, context_address) = addrs[-1]
             if depth == lastdepth - 1:
                 addrs.pop()
-                addr = addrs[-1]
+                (addr, context_address) = addrs[-1]
             pc = int(pc)
             chunk = pc // 31
             if addr not in chunks:
