@@ -191,7 +191,7 @@ for addr in chunks:
     code_size_chunks = (int(code_size) + 30) // 31
     dumpallSuffix = ""
     if dumpall:
-        dumpallSuffix = ", all={','.join(map(str, chunks[addr].keys()))}"
+        dumpallSuffix = f", all={','.join(map(str, chunks[addr].keys()))}"
     print(
         f"{name} code:(size:{code_size}/{code_size_chunks} accessed-chunks:{num_chunks}) storage-slots:{len(addr_slots)} [verkle: code={addr_code_cost} + storage={addr_storage_cost}]" + dumpallSuffix)
 
