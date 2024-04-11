@@ -77,6 +77,7 @@ def calculate_gas_effect(contract_chunks, contract_slots):
 
 dumpall = False
 debug = os.environ.get("DEBUG") is not None
+extraDebug = False
 cast_executable = "cast"
 
 
@@ -108,6 +109,8 @@ while re.match("^-", args[0]):
         dumpall = True
     elif opt == "-d":
         debug = True
+    elif opt == "-dd":
+        extraDebug = True
     elif opt == "-contracts":
         f = open(args.pop(0))
         file = json.load(f)
@@ -128,7 +131,13 @@ lastdepth = 0
 chunks = {}
 slots = {}
 
-for line in output.splitlines():
+line = None
+lastGas = None
+lastRefund = None
+
+lines = output.splitlines()
+for lineNumber in range(len(lines)):
+    line = lines[lineNumber]
     if "Traces:" in line:
         break
     if "CREATE CALL:" in line:
@@ -136,24 +145,41 @@ for line in output.splitlines():
     if "SM CALL" in line:
         (sm_context_address, sm_code_address) = re.search("address: (\w+).*code_address: (\w+)", line).groups()
         continue
-    if "depth:" in line:
-        #    ( $depth, $pc, $opcode ) = /depth:(\d+).*PC:(\d+),.*OPCODE: "(\w+)"/;
 
-        (depth, pc, opcode, stackStr) = re.search("depth:(\d+).*PC:(\d+).*OPCODE: \"(\w+)\".*Stack:\[(.*)\]",
-                                                  line).groups()
-        stack = stackStr.replace("_U256", "").split(", ")
+    if "depth:" in line:
+
+        # depth:1, PC:0, gas:0x10c631(1099313), OPCODE: "PUSH1"(96)  refund:0x0(0) Stack:[], Data size:0, Data: 0x
+        (depth, pc, lineGas, opcode, lineRefund, stackStr) = re.search(
+            "depth:(\d+).*PC:(\d+).*gas:\w+\((\w+)\).*OPCODE: \"(\w+)\".*refund:\w+\((\w+)\).*Stack:\[(.*)\]",
+            line).groups()
+
+
+        gas = None
+        refund = None
+        # cannot check *CALL: next opcode is in different context
+        if "depth:" in lines[lineNumber+1]: 
+            (nextGas, nextRefund, nextStackStr) = re.search(
+                "gas:\w+\((\w+)\).*refund:\w+\((\w+)\).*Stack:\[(.*)\]",
+                lines[lineNumber+1]).groups()
+
+            #gas, refund by this opcode
+            gas = int(lineGas) - int(nextGas)
+            refund = int(nextRefund) - int(lineRefund)
+
+        stack = stackStr.replace("_U256", "").split(", ")[-2:]
         if opcode == "SSTORE":
-            (val, storageSlot) = stack[-2:]
+            (val, storageSlot) = stack
             if context_address not in slots:
                 slots[context_address] = {}
             slots[context_address][storageSlot] = True
-            if debug: print(f"{opcode} context={context_address} slot={storageSlot} val={val}")
+            if debug: print(f"{opcode} context={context_address} slot={storageSlot} gas={gas} refund={refund} val={val}")
         if opcode == "SLOAD":
             (storageSlot,) = stack[-1:]
             if context_address not in slots:
                 slots[context_address] = {}
             slots[context_address][storageSlot] = True
-            if debug: print(f"{opcode} context={context_address} slot={storageSlot}")
+            nextStack = nextStackStr.replace("_U256", "").split(", ")[-2:]
+            if debug: print(f"{opcode} context={context_address} slot={storageSlot} gas={gas} refund={refund}, ret={nextStack[-1:][0]}")
         if depth:
             depth = int(depth)
             if depth == lastdepth + 1:
@@ -167,8 +193,8 @@ for line in output.splitlines():
             if addr not in chunks:
                 chunks[addr] = {}
             chunks[addr][chunk] = chunks[addr].get(chunk, 0) + 1
-            # if debug:
-            #     print(f"{addr}, {chunk}, {pc}, {opcode}, {stack[-2:]}")
+            if extraDebug:
+                print(f"{addr}, {chunk}, {pc}, {opcode}, {gas}, {stack}")
             lastdepth = depth
 
 print("Verkle chunks used by each address (slot=pc//31)")
@@ -187,13 +213,21 @@ for addr in chunks:
     [addr_code_cost, addr_storage_cost] = calculate_gas_effect(chunks[addr], addr_slots)
     total_gas_effect += addr_code_cost
     total_gas_effect += addr_storage_cost
-    code_size = run_cast(f"codesize {addr}").strip()
-    code_size_chunks = (int(code_size) + 30) // 31
+    code_size = 0
+    try:
+        code_size = int(run_cast(f"codesize {addr} 2>/dev/null").strip())
+    except: pass
+    code_size_chunks = (code_size+30) // 31
+    max_chunk = max(chunks[addr].keys())
     dumpallSuffix = ""
     if dumpall:
         dumpallSuffix = f", all={','.join(map(str, chunks[addr].keys()))}"
+    if code_size>0:
+        codeInfo = f"bytes:{code_size} chunks:{code_size_chunks} max:{max_chunk}"
+    else:
+        codeInfo = f"max_chunk:{max_chunk}"
     print(
-        f"{name} code:(size:{code_size}/{code_size_chunks} accessed-chunks:{num_chunks}) storage-slots:{len(addr_slots)} [verkle: code={addr_code_cost} + storage={addr_storage_cost}]" + dumpallSuffix)
+        f"{name} code:({codeInfo} accessed-chunks:{num_chunks}) storage-slots:{len(addr_slots)} [verkle: code={addr_code_cost} + storage={addr_storage_cost}]{dumpallSuffix}")
 
 print("")
 print("Total Verkle gas effect = " + str(total_gas_effect))
