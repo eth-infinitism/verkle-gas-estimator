@@ -14,6 +14,7 @@ def run_cast(command):
 
 
 names = {}
+test_cases = []
 
 
 def get_name(address):
@@ -75,6 +76,15 @@ def calculate_gas_effect(contract_chunks, contract_slots):
     return [code_cost, storage_cost]
 
 
+def evaluate_test_case(case):
+    print("********")
+    print(case['name'])
+    print(case['txHash'])
+    print(case['userOpsCount'])
+    print(case['totalGasUsed'])
+    print("********")
+
+
 dumpall = False
 debug = os.environ.get("DEBUG") is not None
 extraDebug = False
@@ -88,6 +98,7 @@ def usage():
     print("  -a dump all chunks, not only count/max")
     print("  -c {cast-path} use specified 'cast' implementation ")
     print("  -contracts match contract addresses with names in given JSON file")
+    print("  -multiple iterate over transactions in a JSON results file and calculate results for each entry")
     print("Parameters:")
     print("  tx - tx to read. It (and all following params) are passed directly into `cast run -t --quick`")
     print("  file - if the first param is an existing file, it is read instead.")
@@ -99,7 +110,7 @@ args = sys.argv[1:]
 if args == []:
     args = ["-h"]
 
-while re.match("^-", args[0]):
+while len(args) > 0 and re.match("^-", args[0]):
     opt = args.pop(0)
     if opt == "-h":
         usage()
@@ -115,13 +126,20 @@ while re.match("^-", args[0]):
         f = open(args.pop(0))
         file = json.load(f)
         names = file["contracts"]
+    elif opt == "-multiple":
+        f = open(args.pop(0))
+        test_cases = json.load(f)
     else:
         raise Exception("Unknown option " + opt)
 
 # Check if file exists, read file instead of running cast run
-if os.path.exists(args[0]):
+if len(args) > 0 and os.path.exists(args[0]):
     with open(args[0], 'r') as f:
         output = f.read()
+
+elif len(test_cases) > 0:
+    for test_case in test_cases:
+        evaluate_test_case(test_case)
 else:
     argStr = " ".join(args)
     output = run_cast(f"run -t --quick {argStr}")
@@ -153,16 +171,15 @@ for lineNumber in range(len(lines)):
             "depth:(\d+).*PC:(\d+).*gas:\w+\((\w+)\).*OPCODE: \"(\w+)\".*refund:\w+\((\w+)\).*Stack:\[(.*)\]",
             line).groups()
 
-
         gas = None
         refund = None
         # cannot check *CALL: next opcode is in different context
-        if "depth:" in lines[lineNumber+1]: 
+        if "depth:" in lines[lineNumber + 1]:
             (nextGas, nextRefund, nextStackStr) = re.search(
                 "gas:\w+\((\w+)\).*refund:\w+\((\w+)\).*Stack:\[(.*)\]",
-                lines[lineNumber+1]).groups()
+                lines[lineNumber + 1]).groups()
 
-            #gas, refund by this opcode
+            # gas, refund by this opcode
             gas = int(lineGas) - int(nextGas)
             refund = int(nextRefund) - int(lineRefund)
 
@@ -172,14 +189,16 @@ for lineNumber in range(len(lines)):
             if context_address not in slots:
                 slots[context_address] = {}
             slots[context_address][storageSlot] = True
-            if debug: print(f"{opcode} context={context_address} slot={storageSlot} gas={gas} refund={refund} val={val}")
+            if debug: print(
+                f"{opcode} context={context_address} slot={storageSlot} gas={gas} refund={refund} val={val}")
         if opcode == "SLOAD":
             (storageSlot,) = stack[-1:]
             if context_address not in slots:
                 slots[context_address] = {}
             slots[context_address][storageSlot] = True
             nextStack = nextStackStr.replace("_U256", "").split(", ")[-2:]
-            if debug: print(f"{opcode} context={context_address} slot={storageSlot} gas={gas} refund={refund}, ret={nextStack[-1:][0]}")
+            if debug: print(
+                f"{opcode} context={context_address} slot={storageSlot} gas={gas} refund={refund}, ret={nextStack[-1:][0]}")
         if depth:
             depth = int(depth)
             if depth == lastdepth + 1:
@@ -216,13 +235,14 @@ for addr in chunks:
     code_size = 0
     try:
         code_size = int(run_cast(f"codesize {addr} 2>/dev/null").strip())
-    except: pass
-    code_size_chunks = (code_size+30) // 31
+    except:
+        pass
+    code_size_chunks = (code_size + 30) // 31
     max_chunk = max(chunks[addr].keys())
     dumpallSuffix = ""
     if dumpall:
         dumpallSuffix = f", all={','.join(map(str, chunks[addr].keys()))}"
-    if code_size>0:
+    if code_size > 0:
         codeInfo = f"bytes:{code_size} chunks:{code_size_chunks} max:{max_chunk}"
     else:
         codeInfo = f"max_chunk:{max_chunk}"
