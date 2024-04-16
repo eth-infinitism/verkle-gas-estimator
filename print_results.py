@@ -17,11 +17,11 @@ def print_results(results, dumpall):
         print(f"storage slots verkle cost (diff): {result['addr_storage_difference']}")
         print('')
         print('Address Warming')
-        print(f"CALL with value: {result['call_opcode_with_value_count']}")
+        print(f"CALL with value: {result['call_opcode_with_value_savings']}")
         print(f"Others: {result['address_touching_opcode_count']}")
         print('')
         print('CREATE2')
-        print(f"bytes written:{result['create2_opcode_bytes_written']}")
+        print(f"cost difference: {result['create2_opcode_cost_difference']}")
         if dumpall:
             print(f", all chunks={','.join(map(str, result['chunks'][result['addrress']].keys()))}")
         print("")

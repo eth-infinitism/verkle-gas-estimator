@@ -15,7 +15,8 @@ SUBTREE_EDIT_COST = 3000
 CHUNK_EDIT_COST = 500
 CHUNK_FILL_COST = 6200
 
-#  Current (EIP-2929, EIP-2200) constants
+#  Pre-verkle (EIP-2929, EIP-2200 etc.) constants
+G_CALLVALUE = 9000
 SSTORE_SET_GAS = 20000
 WARM_STORAGE_READ_COST = 100
 
@@ -27,7 +28,8 @@ def calculate_deployment_gas_effect(contract_size):
 
 
 def calculate_chunks_read_verkle_effect(contract_chunks):
-    branches_access_events = {0: True}  # subtree 0 is always initialized
+    # NOTE: subtree 0 initialization cost will be tracked here
+    branches_access_events = {}
 
     code_cost = 0
     for [contract_chunk, _] in contract_chunks.items():
@@ -54,7 +56,8 @@ def get_slot_verkle_id(storage_key_hex):
 
 #  subtract current costs and apply new costs
 def calculate_slots_verkle_difference(contract_slots):
-    accessed_subtrees = {0: True}  # subtree 0 is always initialized
+    # NOTE: subtree 0 is already initialized in "calculate_chunks_read_verkle_effect"
+    accessed_subtrees = {0: True}
     accessed_leaves = {}
     edited_subtrees = {}
     edited_leaves = {}
@@ -101,8 +104,25 @@ def calculate_slots_read_verkle_removed_refunds(contract_slots):
     return refunds
 
 
-def calculate_call_opcode_verkle_savings(calls_performed):
-    return 0
+def calculate_call_opcode_verkle_savings(trace_data):
+    return trace_data['count_call_with_value'] * G_CALLVALUE
+
+
+def calculate_create2_opcode_cost_difference(trace_data):
+    difference = 0
+    for contract in trace_data['created_contracts']:
+        size_bytes = trace_data['code_sizes'][contract]
+        if not size_bytes > 0:
+            raise Exception(f"Invalid contract size {contract} {size_bytes}")
+        old_cost = size_bytes * 200
+
+        chunks_count = (size_bytes + 30) // 31
+        main_code_chunks_in_main_branch = CODE_OFFSET - HEADER_STORAGE_OFFSET
+        extra_branches_count = (chunks_count - main_code_chunks_in_main_branch + 255) // 256
+        new_cost = CHUNK_FILL_COST * chunks_count + SUBTREE_EDIT_COST * (extra_branches_count + 1)
+
+        difference = new_cost - old_cost
+    return difference
 
 
 def calculate_create2_opcode_verkle_savings(contract_slots):
@@ -140,6 +160,8 @@ def estimate_verkle_effect(trace_data, names):
 
         call_savings = calculate_call_opcode_verkle_savings(trace_data)
 
+        create2_opcode_cost_difference = calculate_create2_opcode_cost_difference(trace_data)
+
         code_size_chunks = (trace_data['code_sizes'][addr] + 30) // 31
 
         contract_name = get_name(addr, names)
@@ -148,21 +170,21 @@ def estimate_verkle_effect(trace_data, names):
             'contract_name': contract_name,
             'max_chunk': max_chunk,
             'num_chunks': num_chunks,
-            'call_opcode_with_value_count': -1,
             'address_touching_opcode_count': -1,
-            'create2_opcode_bytes_written': -1,
+            'create2_opcode_cost_difference': create2_opcode_cost_difference,
             'addr_code_cost': addr_code_cost,
             'addr_storage_difference': addr_storage_difference,
             # EIP-2200 heavily relies on refunds which is superseded by EIP-4762
             'addr_storage_removed_refund': addr_storage_removed_refund,
-            'call_savings': call_savings,
+            'call_opcode_with_value_savings': call_savings,
             'code_size': trace_data['code_sizes'][addr],
             'code_size_chunks': code_size_chunks
         }
         results['per_contract_result'][addr] = per_contract_result
         results['total_gas_effect'] += \
             (addr_code_cost +
-             addr_storage_difference -
+             addr_storage_difference +
+             create2_opcode_cost_difference -
              addr_storage_removed_refund -
              call_savings
              )
