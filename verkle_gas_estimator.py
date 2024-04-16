@@ -61,7 +61,9 @@ while len(args) > 0 and re.match("^-", args[0]):
         names = file["contracts"]
     elif opt == "-multiple":
         f = open(args.pop(0))
-        test_cases = json.load(f)
+        multiple_results = json.load(f)
+        test_cases = multiple_results['results']
+        names = multiple_results['contracts']
     else:
         raise Exception("Unknown option " + opt)
 
@@ -112,20 +114,33 @@ def parse_trace_results(case, output):
 
             stack = stackStr.replace("_U256", "").split(", ")[-2:]
             if opcode == "SSTORE":
-                (val, storageSlot) = stack
+                (val, storage_slot) = stack
                 if context_address not in slots:
                     slots[context_address] = {}
-                slots[context_address][storageSlot] = {}
+                if storage_slot not in slots[context_address]:
+                    slots[context_address][storage_slot] = []
+
+                slots[context_address][storage_slot].append({
+                    'opcode': opcode,
+                    'gas': gas,
+                    'refund': refund
+                })
                 if debug: print(
-                    f"{opcode} context={context_address} slot={storageSlot} gas={gas} refund={refund} val={val}")
+                    f"{opcode} context={context_address} slot={storage_slot} gas={gas} refund={refund} val={val}")
             if opcode == "SLOAD":
-                (storageSlot,) = stack[-1:]
+                (storage_slot,) = stack[-1:]
                 if context_address not in slots:
                     slots[context_address] = {}
-                slots[context_address][storageSlot] = True
+                if storage_slot not in slots[context_address]:
+                    slots[context_address][storage_slot] = []
+                slots[context_address][storage_slot].append({
+                    'opcode': opcode,
+                    'gas': gas,
+                    'refund': refund
+                })
                 next_stack = next_stack_str.replace("_U256", "").split(", ")[-2:]
                 if debug: print(
-                    f"{opcode} context={context_address} slot={storageSlot} gas={gas} refund={refund}, ret={next_stack[-1:][0]}")
+                    f"{opcode} context={context_address} slot={storage_slot} gas={gas} refund={refund}, ret={next_stack[-1:][0]}")
             if depth:
                 depth = int(depth)
                 if depth == lastdepth + 1:

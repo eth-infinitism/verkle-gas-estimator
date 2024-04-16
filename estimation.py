@@ -91,7 +91,7 @@ def estimate_verkle_effect(trace_data, names):
         if addr in trace_data['slots']:
             addr_slots = trace_data['slots'][addr]
 
-        if addr not in branches_access_events[addr]:
+        if addr not in branches_access_events:
             branches_access_events[addr] = {}
 
         addr_code_cost = calculate_chunks_read_verkle_effect(chunks[addr], branches_access_events[addr])
@@ -115,6 +115,12 @@ def estimate_verkle_effect(trace_data, names):
             'max_chunk': max_chunk,
             'num_chunks': num_chunks,
             'addr_slots': addr_slots,
+            'addr_storage_reads': -1,
+            'addr_storage_edits': -1,
+            'addr_storage_fills': -1,
+            'call_opcode_with_value_count': -1,
+            'address_touching_opcode_count': -1,
+            'create2_opcode_bytes_written': -1,
             'addr_code_cost': addr_code_cost,
             'addr_storage_cost': addr_storage_cost,
             'addr_storage_savings': addr_storage_savings,

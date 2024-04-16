@@ -25,5 +25,7 @@ def print_results(results, dumpall):
         print('CREATE2 Opcode:')
         print(f"bytes written:{result['create2_opcode_bytes_written']}")
         if dumpall:
-            print(f", all={','.join(map(str, result['chunks'][result['addrress']].keys()))}")
+            print(f", all chunks={','.join(map(str, result['chunks'][result['addrress']].keys()))}")
+        print("")
+        print("")
     print("Total Verkle gas effect = " + str(results['total_gas_effect']))
