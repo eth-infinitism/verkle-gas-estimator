@@ -108,6 +108,20 @@ def calculate_call_opcode_verkle_savings(trace_data):
     return trace_data['count_call_with_value'] * G_CALLVALUE
 
 
+def calculate_touching_opcode_cost_difference(trace_data):
+    old_cost = 0
+    new_cost = 0
+    difference = 0
+    for address in trace_data['touched']:
+        if address not in trace_data['chunks']:
+            # this address was only accessed by an 'ADDRESS TOUCHING' opcode
+            old_cost += COLD_ACCOUNT_ACCESS_COST
+            # NOTE: this is not exactly correct, some opcodes cause multiple chunk access events
+            new_cost += WITNESS_BRANCH_COST + WITNESS_CHUNK_COST
+            difference += new_cost - old_cost
+    return difference
+
+
 def calculate_create2_opcode_cost_difference(trace_data):
     difference = 0
     for contract in trace_data['created_contracts']:
@@ -121,7 +135,7 @@ def calculate_create2_opcode_cost_difference(trace_data):
         extra_branches_count = (chunks_count - main_code_chunks_in_main_branch + 255) // 256
         new_cost = CHUNK_FILL_COST * chunks_count + SUBTREE_EDIT_COST * (extra_branches_count + 1)
 
-        difference = new_cost - old_cost
+        difference += new_cost - old_cost
     return difference
 
 
@@ -162,15 +176,26 @@ def estimate_verkle_effect(trace_data, names):
 
         create2_opcode_cost_difference = calculate_create2_opcode_cost_difference(trace_data)
 
+        address_touching_opcode_cost_difference = calculate_touching_opcode_cost_difference(trace_data)
+
         code_size_chunks = (trace_data['code_sizes'][addr] + 30) // 31
 
         contract_name = get_name(addr, names)
+
+        per_contract_diff = (
+                addr_code_cost +
+                addr_storage_difference +
+                create2_opcode_cost_difference +
+                address_touching_opcode_cost_difference -
+                addr_storage_removed_refund -
+                call_savings
+        )
 
         per_contract_result = {
             'contract_name': contract_name,
             'max_chunk': max_chunk,
             'num_chunks': num_chunks,
-            'address_touching_opcode_count': -1,
+            'address_touching_opcode_cost_difference': address_touching_opcode_cost_difference,
             'create2_opcode_cost_difference': create2_opcode_cost_difference,
             'addr_code_cost': addr_code_cost,
             'addr_storage_difference': addr_storage_difference,
@@ -178,14 +203,9 @@ def estimate_verkle_effect(trace_data, names):
             'addr_storage_removed_refund': addr_storage_removed_refund,
             'call_opcode_with_value_savings': call_savings,
             'code_size': trace_data['code_sizes'][addr],
-            'code_size_chunks': code_size_chunks
+            'code_size_chunks': code_size_chunks,
+            'per_contract_diff': per_contract_diff
         }
         results['per_contract_result'][addr] = per_contract_result
-        results['total_gas_effect'] += \
-            (addr_code_cost +
-             addr_storage_difference +
-             create2_opcode_cost_difference -
-             addr_storage_removed_refund -
-             call_savings
-             )
+        results['total_gas_effect'] += per_contract_diff
     return results

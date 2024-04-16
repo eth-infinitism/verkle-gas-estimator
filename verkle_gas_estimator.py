@@ -76,6 +76,7 @@ def parse_trace_results(case, output):
     lastdepth = 0
     chunks = {}
     slots = {}
+    touched = {}
     code_sizes = {}
     count_call_with_value = 0
     created_contracts = []
@@ -134,7 +135,7 @@ def parse_trace_results(case, output):
 
             if opcode in ADDRESS_TOUCHING_OPCODES:
                 addr = stack[-1]
-                slots[addr] = {}
+                touched[addr] = True
                 #add address to the list of touched addresses
                 #(note: in normal case, these opcodes are used in conjuction of "call" opcodes, but
                 # a code may call (say) EXTCODESIZE without making a call
@@ -195,6 +196,7 @@ def parse_trace_results(case, output):
         code_sizes=code_sizes,
         chunks=chunks,
         slots=slots,
+        touched=touched,
         count_call_with_value=count_call_with_value,
         created_contracts=created_contracts
     )
