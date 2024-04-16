@@ -12,7 +12,7 @@ from print_results import print_results
 # Function to run cast command and return output
 def run_cast(command):
     cmd = f"{cast_executable} {command}"
-    return subprocess.check_output(cmd, shell=True, text=True)
+    return subprocess.check_output(cmd, shell=True, text=True).strip()
 
 
 names = {}
@@ -22,7 +22,8 @@ dumpall = False
 debug = os.environ.get("DEBUG") is not None
 extraDebug = False
 cast_executable = "cast"
-
+# call_opcodes=["CALL", "CALLCODE", "DELEGATECALL", "STATICCALL"]
+ADDRESS_TOUCHING_OPCODES = ["EXTCODESIZE", "EXTCODECOPY", "EXTCODEHASH", "BALANCE", "SELFDESTRUCT"]
 
 def usage():
     print(f"usage: {sys.argv[0]} [options] {{tx|file}} [-r network]")
@@ -70,13 +71,14 @@ while len(args) > 0 and re.match("^-", args[0]):
 
 def parse_trace_results(case, output):
     print(f"Evaluating transaction {case['txHash']}")
-    trace_data = {}
 
     addrs = []
     lastdepth = 0
     chunks = {}
     slots = {}
     code_sizes = {}
+    count_call_with_value = 0
+    created_contracts = []
 
     # line = None
     # lastGas = None
@@ -88,16 +90,32 @@ def parse_trace_results(case, output):
         if "Traces:" in line:
             break
         if "CREATE CALL:" in line:
+            #CREATE CALL: caller:0x5de4839a76cf55d0c90e2061ef4386d962E15ae3, scheme:Create2 { salt: 0x0000000000000000000000000000000000000000114ea8212b2f9f4cb29398d9_U256
+
+            (caller, salt, initcode) = re.search(
+                r"caller:(\w+).*salt: (\w+)_U256.* init_code:\"(\w+)\"",
+                line).groups()
+
+            res = run_cast(f"keccak `cast concat-hex 0xff {caller} {salt} \\`cast keccak 0x{initcode}\\` `")
+            # res is 32-byte. need to take last 20
+            addr = "0x" + res[26:]
+            created_contracts.append(addr)
             continue
         if "SM CALL" in line:
-            (sm_context_address, sm_code_address) = re.search("address: (\w+).*code_address: (\w+)", line).groups()
+            #SM CALL:   0x7fc..,context:CallContext { address: 0x7fc, caller: 0x5ff, code_address: 0x7fc, apparent_value: 0x0_U256, scheme: Call }, is_static:false, transfer:Transfer { source: 0x5ff137d4b0fdcd49dca30c7cf57e578a026d2789, target:
+            # 0x7fc98430eaedbb6070b35b39d798725049088348, value: 0x0_U256 }, input_size:388
+            (sm_context_address, sm_code_address, sm_value) = re.search(
+                r"address: (\w+).*code_address: (\w+).* value: (\w+)_U256",
+                line).groups()
+            if sm_value != "0":
+                count_call_with_value += 1
             continue
 
         if "depth:" in line:
 
             # depth:1, PC:0, gas:0x10c631(1099313), OPCODE: "PUSH1"(96)  refund:0x0(0) Stack:[], Data size:0, Data: 0x
             (depth, pc, lineGas, opcode, lineRefund, stackStr) = re.search(
-                "depth:(\d+).*PC:(\d+).*gas:\w+\((\w+)\).*OPCODE: \"(\w+)\".*refund:\w+\((\w+)\).*Stack:\[(.*)\]",
+                r"depth:(\d+).*PC:(\d+).*gas:\w+\((\w+)\).*OPCODE: \"(\w+)\".*refund:\w+\((\w+)\).*Stack:\[(.*)\]",
                 line).groups()
 
             gas = None
@@ -105,7 +123,7 @@ def parse_trace_results(case, output):
             # cannot check *CALL: next opcode is in different context
             if "depth:" in lines[lineNumber + 1]:
                 (nextGas, nextRefund, next_stack_str) = re.search(
-                    "gas:\w+\((\w+)\).*refund:\w+\((\w+)\).*Stack:\[(.*)\]",
+                    r"gas:\w+\((\w+)\).*refund:\w+\((\w+)\).*Stack:\[(.*)\]",
                     lines[lineNumber + 1]).groups()
 
                 # gas, refund by this opcode
@@ -113,6 +131,14 @@ def parse_trace_results(case, output):
                 refund = int(nextRefund) - int(lineRefund)
 
             stack = stackStr.replace("_U256", "").split(", ")[-2:]
+
+            if opcode in ADDRESS_TOUCHING_OPCODES:
+                addr = stack[-1]
+                slots[addr] = {}
+                #add address to the list of touched addresses
+                #(note: in normal case, these opcodes are used in conjuction of "call" opcodes, but
+                # a code may call (say) EXTCODESIZE without making a call
+
             if opcode == "SSTORE":
                 (val, storage_slot) = stack
                 if context_address not in slots:
@@ -161,15 +187,17 @@ def parse_trace_results(case, output):
     for address in chunks:
         code_sizes[address] = -1
         try:
-            code_sizes[address] = int(run_cast(f"codesize {address} 2>/dev/null").strip())
+            code_sizes[address] = int(run_cast(f"codesize {address} 2>/dev/null"))
         except:
             pass
 
-    trace_data['code_sizes'] = code_sizes
-    trace_data['chunks'] = chunks
-    trace_data['slots'] = slots
-
-    return trace_data
+    return dict(
+        code_sizes=code_sizes,
+        chunks=chunks,
+        slots=slots,
+        count_call_with_value=count_call_with_value,
+        created_contracts=created_contracts
+    )
 
 
 def evaluate_test_case(case):
