@@ -71,25 +71,6 @@ def get_name(address, names):
         return names[address] + " " + short_address
 
 
-def print_results(results, dumpall):
-    for address in results['per_contract_result']:
-        result = results['per_contract_result'][address]
-        if result['code_size'] > 0:
-            codeInfo = f"bytes:{result['code_size']} chunks:{result['code_size_chunks']} max:{result['max_chunk']}"
-        else:
-            codeInfo = f"max_chunk:{result['max_chunk']}"
-
-        dumpallSuffix = ""
-        if dumpall:
-            dumpallSuffix = f", all={','.join(map(str, result['chunks'][result['addrress']].keys()))}"
-
-        print(
-            f"{result['contract_name']} code:({codeInfo} accessed-chunks:{result['num_chunks']}) storage-slots:{len(result['addr_slots'])} [verkle: code={result['addr_code_cost']} + storage={result['addr_storage_cost']}]{dumpallSuffix}"
-        )
-    print("")
-    print("Total Verkle gas effect = " + str(results['total_gas_effect']))
-
-
 def estimate_verkle_effect(trace_data, names):
     total_gas_effect = 0
     branches_access_events = {}
@@ -109,11 +90,15 @@ def estimate_verkle_effect(trace_data, names):
         addr_slots = {}
         if addr in trace_data['slots']:
             addr_slots = trace_data['slots'][addr]
-        addr_code_cost = calculate_chunks_read_verkle_effect(chunks[addr], branches_access_events)
+
+        if addr not in branches_access_events[addr]:
+            branches_access_events[addr] = {}
+
+        addr_code_cost = calculate_chunks_read_verkle_effect(chunks[addr], branches_access_events[addr])
 
         addr_storage_cost = 0
         if addr in trace_data['slots']:
-            addr_storage_cost = calculate_slots_read_verkle_overhead(trace_data['slots'][addr], branches_access_events)
+            addr_storage_cost = calculate_slots_read_verkle_overhead(trace_data['slots'][addr], branches_access_events[addr])
 
         #  TODO
         addr_storage_savings = 0

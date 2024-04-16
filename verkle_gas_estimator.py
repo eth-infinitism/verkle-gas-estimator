@@ -5,7 +5,8 @@ import re
 import subprocess
 import sys
 
-from estimation import estimate_verkle_effect, print_results
+from estimation import estimate_verkle_effect
+from print_results import print_results
 
 
 # Function to run cast command and return output
@@ -101,7 +102,7 @@ def parse_trace_results(case, output):
             refund = None
             # cannot check *CALL: next opcode is in different context
             if "depth:" in lines[lineNumber + 1]:
-                (nextGas, nextRefund, nextStackStr) = re.search(
+                (nextGas, nextRefund, next_stack_str) = re.search(
                     "gas:\w+\((\w+)\).*refund:\w+\((\w+)\).*Stack:\[(.*)\]",
                     lines[lineNumber + 1]).groups()
 
@@ -114,7 +115,7 @@ def parse_trace_results(case, output):
                 (val, storageSlot) = stack
                 if context_address not in slots:
                     slots[context_address] = {}
-                slots[context_address][storageSlot] = True
+                slots[context_address][storageSlot] = {}
                 if debug: print(
                     f"{opcode} context={context_address} slot={storageSlot} gas={gas} refund={refund} val={val}")
             if opcode == "SLOAD":
@@ -122,9 +123,9 @@ def parse_trace_results(case, output):
                 if context_address not in slots:
                     slots[context_address] = {}
                 slots[context_address][storageSlot] = True
-                nextStack = nextStackStr.replace("_U256", "").split(", ")[-2:]
+                next_stack = next_stack_str.replace("_U256", "").split(", ")[-2:]
                 if debug: print(
-                    f"{opcode} context={context_address} slot={storageSlot} gas={gas} refund={refund}, ret={nextStack[-1:][0]}")
+                    f"{opcode} context={context_address} slot={storageSlot} gas={gas} refund={refund}, ret={next_stack[-1:][0]}")
             if depth:
                 depth = int(depth)
                 if depth == lastdepth + 1:
@@ -143,7 +144,7 @@ def parse_trace_results(case, output):
                 lastdepth = depth
 
     for address in chunks:
-        code_sizes[address] = 0
+        code_sizes[address] = -1
         try:
             code_sizes[address] = int(run_cast(f"codesize {address} 2>/dev/null").strip())
         except:
@@ -167,11 +168,11 @@ def evaluate_test_case(case):
 if len(args) > 0 and os.path.exists(args[0]):
     with open(args[0], 'r') as f:
         cast_output = f.read()
-        estimate_verkle_effect({}, cast_output, names)
+        estimate_verkle_effect(cast_output, names)
 elif len(test_cases) > 0:
     for test_case in test_cases:
         evaluate_test_case(test_case)
 else:
     argStr = " ".join(args)
     cast_output = run_cast(f"run -t --quick {argStr}")
-    estimate_verkle_effect({}, cast_output, names)
+    estimate_verkle_effect(cast_output, names)
