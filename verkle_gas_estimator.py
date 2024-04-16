@@ -159,8 +159,8 @@ def parse_trace_results(case, output):
 def evaluate_test_case(case):
     output = run_cast(f"run -t --quick {case['txHash']}")
     trace_results = parse_trace_results(case, output)
-    verkle_results = estimate_verkle_effect(trace_results, dumpall, names)
-    print_results(case['name'], verkle_results, dumpall)
+    verkle_results = estimate_verkle_effect(trace_results, names)
+    print_results(verkle_results, dumpall)
 
 
 # Check if file exists, read file instead of running cast run

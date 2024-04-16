@@ -71,12 +71,9 @@ def get_name(address, names):
         return names[address] + " " + short_address
 
 
-def print_results(name, results, total_gas_effect, dumpall):
-    print("")
-    print("Total Verkle gas effect = " + str(total_gas_effect))
-
-    for address in results:
-        result = results[address]
+def print_results(results, dumpall):
+    for address in results['per_contract_result']:
+        result = results['per_contract_result'][address]
         if result['code_size'] > 0:
             codeInfo = f"bytes:{result['code_size']} chunks:{result['code_size_chunks']} max:{result['max_chunk']}"
         else:
@@ -87,14 +84,19 @@ def print_results(name, results, total_gas_effect, dumpall):
             dumpallSuffix = f", all={','.join(map(str, result['chunks'][result['addrress']].keys()))}"
 
         print(
-            f"{name} code:({codeInfo} accessed-chunks:{result['num_chunks']}) storage-slots:{len(result['addr_slots'])} [verkle: code={result['addr_code_cost']} + storage={result['addr_storage_cost']}]{dumpallSuffix}"
+            f"{result['contract_name']} code:({codeInfo} accessed-chunks:{result['num_chunks']}) storage-slots:{len(result['addr_slots'])} [verkle: code={result['addr_code_cost']} + storage={result['addr_storage_cost']}]{dumpallSuffix}"
         )
+    print("")
+    print("Total Verkle gas effect = " + str(results['total_gas_effect']))
 
 
-def estimate_verkle_effect(trace_data, dumpall, names):
+def estimate_verkle_effect(trace_data, names):
     total_gas_effect = 0
     branches_access_events = {}
-    results = {}
+    results = {
+        'per_contract_result': {},
+        'total_gas_effect': 0
+    }
     # for each address in trace data
     # branches_access_events += {0: True}
 
@@ -121,7 +123,10 @@ def estimate_verkle_effect(trace_data, dumpall, names):
 
         code_size_chunks = (trace_data['code_sizes'][addr] + 30) // 31
 
-        result = {
+        contract_name = get_name(addr, names)
+
+        per_contract_result = {
+            'contract_name': contract_name,
             'max_chunk': max_chunk,
             'num_chunks': num_chunks,
             'addr_slots': addr_slots,
@@ -132,7 +137,6 @@ def estimate_verkle_effect(trace_data, dumpall, names):
             'code_size': trace_data['code_sizes'][addr],
             'code_size_chunks': code_size_chunks
         }
-
-        results[addr] = result
-        name = get_name(addr, names)
-        print_results(name, results, total_gas_effect, dumpall)
+        results['per_contract_result'][addr] = per_contract_result
+        results['total_gas_effect'] = total_gas_effect
+    return results
