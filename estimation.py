@@ -107,7 +107,7 @@ def calculate_slots_read_verkle_removed_refunds(contract_slots):
 def calculate_call_opcode_verkle_savings(trace_data, address):
     if address not in trace_data['count_call_with_value']:
         return 0
-    return trace_data['count_call_with_value'][address] * G_CALLVALUE
+    return -1 * trace_data['count_call_with_value'][address] * G_CALLVALUE
 
 
 def calculate_touching_opcode_cost_difference(trace_data):
@@ -179,7 +179,7 @@ def estimate_verkle_effect(trace_data, names):
             addr_storage_difference = calculate_slots_verkle_difference(addr_slots)
             addr_storage_removed_refund = calculate_slots_read_verkle_removed_refunds(addr_slots)
 
-        call_savings = calculate_call_opcode_verkle_savings(trace_data, addr)
+        call_opcode_with_value_diff = calculate_call_opcode_verkle_savings(trace_data, addr)
 
         create2_opcode_cost_difference = calculate_create2_opcode_cost_difference(trace_data, addr)
 
@@ -191,8 +191,8 @@ def estimate_verkle_effect(trace_data, names):
                 addr_code_cost +
                 addr_storage_difference +
                 create2_opcode_cost_difference +
-                addr_storage_removed_refund -
-                call_savings
+                addr_storage_removed_refund +
+                call_opcode_with_value_diff
         )
 
         per_contract_result = {
@@ -204,7 +204,7 @@ def estimate_verkle_effect(trace_data, names):
             'addr_storage_difference': addr_storage_difference,
             # EIP-2200 heavily relies on refunds which is superseded by EIP-4762
             'addr_storage_removed_refund': addr_storage_removed_refund,
-            'call_opcode_with_value_savings': call_savings,
+            'call_opcode_with_value_diff': call_opcode_with_value_diff,
             'code_size': trace_data['code_sizes'][addr],
             'code_size_chunks': code_size_chunks,
             'per_contract_diff': per_contract_diff

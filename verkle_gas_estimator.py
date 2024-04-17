@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import csv
 import json
 import os
 import re
@@ -24,6 +25,7 @@ extraDebug = False
 cast_executable = "cast"
 # call_opcodes=["CALL", "CALLCODE", "DELEGATECALL", "STATICCALL"]
 ADDRESS_TOUCHING_OPCODES = ["EXTCODESIZE", "EXTCODECOPY", "EXTCODEHASH", "BALANCE", "SELFDESTRUCT"]
+
 
 def usage():
     print(f"usage: {sys.argv[0]} [options] {{tx|file}} [-r network]")
@@ -91,7 +93,7 @@ def parse_trace_results(case, output):
         if "Traces:" in line:
             break
         if "CREATE CALL:" in line:
-            #CREATE CALL: caller:0x5de4839a76cf55d0c90e2061ef4386d962E15ae3, scheme:Create2 { salt: 0x0000000000000000000000000000000000000000114ea8212b2f9f4cb29398d9_U256
+            # CREATE CALL: caller:0x5de4839a76cf55d0c90e2061ef4386d962E15ae3, scheme:Create2 { salt: 0x0000000000000000000000000000000000000000114ea8212b2f9f4cb29398d9_U256
 
             (caller, salt, initcode) = re.search(
                 r"caller:(\w+).*salt: (\w+)_U256.* init_code:\"(\w+)\"",
@@ -107,7 +109,7 @@ def parse_trace_results(case, output):
             created_contracts[caller].append(created_address)
             continue
         if "SM CALL" in line:
-            #SM CALL:   0x7fc..,context:CallContext { address: 0x7fc, caller: 0x5ff, code_address: 0x7fc, apparent_value: 0x0_U256, scheme: Call }, is_static:false, transfer:Transfer { source: 0x5ff137d4b0fdcd49dca30c7cf57e578a026d2789, target:
+            # SM CALL:   0x7fc..,context:CallContext { address: 0x7fc, caller: 0x5ff, code_address: 0x7fc, apparent_value: 0x0_U256, scheme: Call }, is_static:false, transfer:Transfer { source: 0x5ff137d4b0fdcd49dca30c7cf57e578a026d2789, target:
             # 0x7fc98430eaedbb6070b35b39d798725049088348, value: 0x0_U256 }, input_size:388
             (sm_context_address, sm_code_address, sm_value) = re.search(
                 r"address: (\w+).*code_address: (\w+).* value: (\w+)_U256",
@@ -144,8 +146,8 @@ def parse_trace_results(case, output):
                 touched_address = stack[-1]
                 touched_address = f"0x{touched_address[26:]}"
                 touched[touched_address.lower()] = True
-                #add address to the list of touched addresses
-                #(note: in normal case, these opcodes are used in conjuction of "call" opcodes, but
+                # add address to the list of touched addresses
+                # (note: in normal case, these opcodes are used in conjuction of "call" opcodes, but
                 # a code may call (say) EXTCODESIZE without making a call
 
             if opcode == "SSTORE":
@@ -218,6 +220,17 @@ def evaluate_test_case(case):
     trace_results = parse_trace_results(case, output)
     verkle_results = estimate_verkle_effect(trace_results, names)
     print_results(verkle_results, dumpall)
+    pre_verkle_gas_used = case['totalGasUsed']
+    post_verkle_gas_used = pre_verkle_gas_used + verkle_results['total_gas_effect']
+    return [case['name'], pre_verkle_gas_used, post_verkle_gas_used]
+
+
+def write_csv(rows):
+    with open('verkle-effects-estimate.csv', 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["name", "pre_verkle_gas_used", "post_verkle_gas_used"])
+        for row in rows:
+            writer.writerow(row)
 
 
 # Check if file exists, read file instead of running cast run
@@ -226,8 +239,10 @@ if len(args) > 0 and os.path.exists(args[0]):
         cast_output = f.read()
         estimate_verkle_effect(cast_output, names)
 elif len(test_cases) > 0:
+    evaluated = []
     for test_case in test_cases:
-        evaluate_test_case(test_case)
+        evaluated.append(evaluate_test_case(test_case))
+    write_csv(evaluated)
 else:
     argStr = " ".join(args)
     cast_output = run_cast(f"run -t --quick {argStr}")
