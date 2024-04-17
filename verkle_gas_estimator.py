@@ -78,8 +78,8 @@ def parse_trace_results(case, output):
     slots = {}
     touched = {}
     code_sizes = {}
-    count_call_with_value = 0
-    created_contracts = []
+    count_call_with_value = {}
+    created_contracts = {}
 
     # line = None
     # lastGas = None
@@ -99,8 +99,12 @@ def parse_trace_results(case, output):
 
             res = run_cast(f"keccak `cast concat-hex 0xff {caller} {salt} \\`cast keccak 0x{initcode}\\` `")
             # res is 32-byte. need to take last 20
-            addr = "0x" + res[26:]
-            created_contracts.append(addr)
+            created_address = "0x" + res[26:]
+            created_address = created_address.lower()
+            caller = caller.lower()
+            if caller not in created_contracts:
+                created_contracts[caller] = []
+            created_contracts[caller].append(created_address)
             continue
         if "SM CALL" in line:
             #SM CALL:   0x7fc..,context:CallContext { address: 0x7fc, caller: 0x5ff, code_address: 0x7fc, apparent_value: 0x0_U256, scheme: Call }, is_static:false, transfer:Transfer { source: 0x5ff137d4b0fdcd49dca30c7cf57e578a026d2789, target:
@@ -108,8 +112,11 @@ def parse_trace_results(case, output):
             (sm_context_address, sm_code_address, sm_value) = re.search(
                 r"address: (\w+).*code_address: (\w+).* value: (\w+)_U256",
                 line).groups()
-            if sm_value != "0":
-                count_call_with_value += 1
+            sm_context_address = sm_context_address.lower()
+            if int(sm_value, 16) != 0:
+                if sm_context_address not in count_call_with_value:
+                    count_call_with_value[sm_context_address] = 0
+                count_call_with_value[sm_context_address] += 1
             continue
 
         if "depth:" in line:
@@ -134,14 +141,16 @@ def parse_trace_results(case, output):
             stack = stackStr.replace("_U256", "").split(", ")[-2:]
 
             if opcode in ADDRESS_TOUCHING_OPCODES:
-                addr = stack[-1]
-                touched[addr] = True
+                touched_address = stack[-1]
+                touched_address = f"0x{touched_address[26:]}"
+                touched[touched_address.lower()] = True
                 #add address to the list of touched addresses
                 #(note: in normal case, these opcodes are used in conjuction of "call" opcodes, but
                 # a code may call (say) EXTCODESIZE without making a call
 
             if opcode == "SSTORE":
                 (val, storage_slot) = stack
+                context_address = context_address.lower()
                 if context_address not in slots:
                     slots[context_address] = {}
                 if storage_slot not in slots[context_address]:
@@ -156,6 +165,7 @@ def parse_trace_results(case, output):
                     f"{opcode} context={context_address} slot={storage_slot} gas={gas} refund={refund} val={val}")
             if opcode == "SLOAD":
                 (storage_slot,) = stack[-1:]
+                context_address = context_address.lower()
                 if context_address not in slots:
                     slots[context_address] = {}
                 if storage_slot not in slots[context_address]:
@@ -178,6 +188,7 @@ def parse_trace_results(case, output):
                     (addr, context_address) = addrs[-1]
                 pc = int(pc)
                 chunk = pc // 31
+                addr = addr.lower()
                 if addr not in chunks:
                     chunks[addr] = {}
                 chunks[addr][chunk] = chunks[addr].get(chunk, 0) + 1

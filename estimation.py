@@ -104,8 +104,10 @@ def calculate_slots_read_verkle_removed_refunds(contract_slots):
     return refunds
 
 
-def calculate_call_opcode_verkle_savings(trace_data):
-    return trace_data['count_call_with_value'] * G_CALLVALUE
+def calculate_call_opcode_verkle_savings(trace_data, address):
+    if address not in trace_data['count_call_with_value']:
+        return 0
+    return trace_data['count_call_with_value'][address] * G_CALLVALUE
 
 
 def calculate_touching_opcode_cost_difference(trace_data):
@@ -122,25 +124,30 @@ def calculate_touching_opcode_cost_difference(trace_data):
     return difference
 
 
-def calculate_create2_opcode_cost_difference(trace_data):
+def calculate_create2_opcode_cost_difference(trace_data, address):
+    if address not in trace_data['created_contracts']:
+        return 0
+
     difference = 0
-    for contract in trace_data['created_contracts']:
+    for contract in trace_data['created_contracts'][address]:
         size_bytes = trace_data['code_sizes'][contract]
         if not size_bytes > 0:
             raise Exception(f"Invalid contract size {contract} {size_bytes}")
         old_cost = size_bytes * 200
 
-        chunks_count = (size_bytes + 30) // 31
+        code_chunks_count = (size_bytes + 30) // 31
         main_code_chunks_in_main_branch = CODE_OFFSET - HEADER_STORAGE_OFFSET
-        extra_branches_count = (chunks_count - main_code_chunks_in_main_branch + 255) // 256
-        new_cost = CHUNK_FILL_COST * chunks_count + SUBTREE_EDIT_COST * (extra_branches_count + 1)
+        extra_branches_count = (code_chunks_count - main_code_chunks_in_main_branch + 255) // 256
+
+        # 1 extra branch for counting the cost of editing the "main" branch
+        # 5 "chunks" for VERSION_LEAF_KEY, NONCE_LEAF_KEY, BALANCE_LEAF_KEY, CODE_KECCAK_LEAF_KEY, CODE_SIZE_LEAF_KEY
+        new_cost = (
+                CHUNK_FILL_COST * (code_chunks_count + 5) +
+                SUBTREE_EDIT_COST * (extra_branches_count + 1)
+        )
 
         difference += new_cost - old_cost
     return difference
-
-
-def calculate_create2_opcode_verkle_savings(contract_slots):
-    return 0
 
 
 def get_name(address, names):
@@ -172,11 +179,9 @@ def estimate_verkle_effect(trace_data, names):
             addr_storage_difference = calculate_slots_verkle_difference(addr_slots)
             addr_storage_removed_refund = calculate_slots_read_verkle_removed_refunds(addr_slots)
 
-        call_savings = calculate_call_opcode_verkle_savings(trace_data)
+        call_savings = calculate_call_opcode_verkle_savings(trace_data, addr)
 
-        create2_opcode_cost_difference = calculate_create2_opcode_cost_difference(trace_data)
-
-        address_touching_opcode_cost_difference = calculate_touching_opcode_cost_difference(trace_data)
+        create2_opcode_cost_difference = calculate_create2_opcode_cost_difference(trace_data, addr)
 
         code_size_chunks = (trace_data['code_sizes'][addr] + 30) // 31
 
@@ -186,7 +191,6 @@ def estimate_verkle_effect(trace_data, names):
                 addr_code_cost +
                 addr_storage_difference +
                 create2_opcode_cost_difference +
-                address_touching_opcode_cost_difference -
                 addr_storage_removed_refund -
                 call_savings
         )
@@ -195,7 +199,6 @@ def estimate_verkle_effect(trace_data, names):
             'contract_name': contract_name,
             'max_chunk': max_chunk,
             'num_chunks': num_chunks,
-            'address_touching_opcode_cost_difference': address_touching_opcode_cost_difference,
             'create2_opcode_cost_difference': create2_opcode_cost_difference,
             'addr_code_cost': addr_code_cost,
             'addr_storage_difference': addr_storage_difference,
@@ -206,6 +209,13 @@ def estimate_verkle_effect(trace_data, names):
             'code_size_chunks': code_size_chunks,
             'per_contract_diff': per_contract_diff
         }
+
         results['per_contract_result'][addr] = per_contract_result
         results['total_gas_effect'] += per_contract_diff
+
+    # touching an extra address is per-transaction and cannot be tracked per-contract
+    address_touching_opcode_cost_difference = calculate_touching_opcode_cost_difference(trace_data)
+    results['address_touching_opcode_cost_difference'] = address_touching_opcode_cost_difference
+    results['total_gas_effect'] += address_touching_opcode_cost_difference
+
     return results
