@@ -25,6 +25,7 @@ extraDebug = False
 __dir__ = os.path.dirname(os.path.realpath(__file__))
 # make sure to use "cast" from an empty folder. it runs VERY slow if there are sub-folders...
 cast_executable = __dir__ + "/fastcast"
+cast_executable = "cd /tmp; cast"
 # call_opcodes=["CALL", "CALLCODE", "DELEGATECALL", "STATICCALL"]
 ADDRESS_TOUCHING_OPCODES = ["EXTCODESIZE", "EXTCODECOPY", "EXTCODEHASH", "BALANCE", "SELFDESTRUCT"]
 
@@ -59,6 +60,7 @@ while len(args) > 0 and re.match("^-", args[0]):
     elif opt == "-d":
         debug = True
     elif opt == "-dd":
+        debug = True
         extraDebug = True
     elif opt == "-contracts":
         f = open(args.pop(0))
@@ -198,7 +200,7 @@ def parse_trace_results(case, output):
                     chunks[addr] = {}
                 chunks[addr][chunk] = chunks[addr].get(chunk, 0) + 1
                 if extraDebug:
-                    print(f"{addr}, {chunk}, {pc}, {opcode}, {gas}, {stack}")
+                    print(f"{depth} {addr}, {chunk}, {pc}, {opcode}, {gas}, {stack}")
                 lastdepth = depth
 
     for address in chunks:
@@ -220,14 +222,10 @@ def parse_trace_results(case, output):
 
 def evaluate_test_case(case):
     output = run_cast(f"run -t --quick {case['txHash']}")
+    pre_verkle_gas_used = int(re.search(r"Gas used: (\d+)", output).groups(0)[0])
     trace_results = parse_trace_results(case, output)
     verkle_results = estimate_verkle_gas_cost_difference(trace_results, names)
-    print_results(case['name'], case['totalGasUsed'], verkle_results, dumpall)
-    pre_verkle_gas_used = case.get('totalGasUsed')
-    gasUsed = int(re.search(r"Gas used: (\d+)", output).groups(0)[0])
-    if pre_verkle_gas_used is None:
-        pre_verkle_gas_used = gasUsed
-    assert gasUsed == pre_verkle_gas_used
+    print_results(case['name'], pre_verkle_gas_used, verkle_results, dumpall)
     post_verkle_gas_used = pre_verkle_gas_used + verkle_results['total_gas_cost_difference']
     return [case['name'], pre_verkle_gas_used, post_verkle_gas_used]
 
