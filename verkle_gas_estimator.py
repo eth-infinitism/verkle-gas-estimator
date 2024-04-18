@@ -113,9 +113,10 @@ def parse_trace_results(case, output):
         if "SM CALL" in line:
             # SM CALL:   0x7fc..,context:CallContext { address: 0x7fc, caller: 0x5ff, code_address: 0x7fc, apparent_value: 0x0_U256, scheme: Call }, is_static:false, transfer:Transfer { source: 0x5ff137d4b0fdcd49dca30c7cf57e578a026d2789, target:
             # 0x7fc98430eaedbb6070b35b39d798725049088348, value: 0x0_U256 }, input_size:388
-            (sm_context_address, sm_code_address, sm_value) = re.search(
-                r"address: (\w+).*code_address: (\w+).* value: (\w+)_U256",
+            (sm_context_address, sm_code_address, scheme, sm_value) = re.search(
+                r"address: (\w+).*code_address: (\w+).*scheme: (\w+).* value: (\w+)_U256",
                 line).groups()
+            if debug: print(f"Call {scheme} code-address: {sm_code_address}")
             sm_context_address = sm_context_address.lower()
             if int(sm_value, 16) != 0:
                 if sm_context_address not in count_call_with_value:
@@ -222,7 +223,11 @@ def evaluate_test_case(case):
     trace_results = parse_trace_results(case, output)
     verkle_results = estimate_verkle_effect(trace_results, names)
     print_results(verkle_results, dumpall)
-    pre_verkle_gas_used = case['totalGasUsed']
+    pre_verkle_gas_used = case.get('totalGasUsed')
+    gasUsed = int(re.search(r"Gas used: (\d+)", output).groups(0)[0])
+    if pre_verkle_gas_used is None:
+        pre_verkle_gas_used = gasUsed
+    assert gasUsed == pre_verkle_gas_used
     post_verkle_gas_used = pre_verkle_gas_used + verkle_results['total_gas_effect']
     return [case['name'], pre_verkle_gas_used, post_verkle_gas_used]
 
@@ -256,5 +261,10 @@ elif len(test_cases) > 0:
     write_csv(evaluated)
 else:
     argStr = " ".join(args)
-    cast_output = run_cast(f"run -t --quick {argStr}")
-    estimate_verkle_effect(cast_output, names)
+    # cast_output = run_cast(f"run -t --quick {argStr}")
+    # estimate_verkle_effect(cast_output, names)
+    evaluate_test_case(dict(
+        txHash=argStr,
+        name='cmdline'
+    ))
+
