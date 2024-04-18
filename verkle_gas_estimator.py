@@ -230,7 +230,7 @@ def evaluate_test_case(case):
 def write_csv(rows):
     with open('verkle-effects-estimate.csv', 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(["name", "pre_verkle_gas_used", "post_verkle_gas_used"])
+        writer.writerow(["name", "pre_verkle_gas_used", "post_verkle_gas_used", "marginal_pre_verkle", "marginal_post_verkle"])
         for row in rows:
             writer.writerow(row)
 
@@ -242,8 +242,17 @@ if len(args) > 0 and os.path.exists(args[0]):
         estimate_verkle_effect(cast_output, names)
 elif len(test_cases) > 0:
     evaluated = []
+    lastpre = 0
+    lastpost = 0
     for test_case in test_cases:
-        evaluated.append(evaluate_test_case(test_case))
+        row = evaluate_test_case(test_case)
+        if "double" in row[0]:
+            row.append(row[1]-lastpre)
+            row.append(row[2]-lastpost)
+        else:
+            lastpre = row[1]
+            lastpost = row[2]
+        evaluated.append(row)
     write_csv(evaluated)
 else:
     argStr = " ".join(args)
