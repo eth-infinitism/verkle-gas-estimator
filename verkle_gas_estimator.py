@@ -22,7 +22,9 @@ test_cases = []
 dumpall = False
 debug = os.environ.get("DEBUG") is not None
 extraDebug = False
-cast_executable = "cast"
+__dir__ = os.path.dirname(os.path.realpath(__file__))
+# make sure to use "cast" from an empty folder. it runs VERY slow if there are sub-folders...
+cast_executable = __dir__ + "/fastcast"
 # call_opcodes=["CALL", "CALLCODE", "DELEGATECALL", "STATICCALL"]
 ADDRESS_TOUCHING_OPCODES = ["EXTCODESIZE", "EXTCODECOPY", "EXTCODEHASH", "BALANCE", "SELFDESTRUCT"]
 
