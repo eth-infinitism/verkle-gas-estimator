@@ -6,7 +6,7 @@ import re
 import subprocess
 import sys
 
-from estimation import estimate_verkle_effect
+from estimation import estimate_verkle_gas_cost_difference
 from print_results import print_results
 
 
@@ -221,14 +221,14 @@ def parse_trace_results(case, output):
 def evaluate_test_case(case):
     output = run_cast(f"run -t --quick {case['txHash']}")
     trace_results = parse_trace_results(case, output)
-    verkle_results = estimate_verkle_effect(trace_results, names)
-    print_results(verkle_results, dumpall)
+    verkle_results = estimate_verkle_gas_cost_difference(trace_results, names)
+    print_results(case['name'], case['totalGasUsed'], verkle_results, dumpall)
     pre_verkle_gas_used = case.get('totalGasUsed')
     gasUsed = int(re.search(r"Gas used: (\d+)", output).groups(0)[0])
     if pre_verkle_gas_used is None:
         pre_verkle_gas_used = gasUsed
     assert gasUsed == pre_verkle_gas_used
-    post_verkle_gas_used = pre_verkle_gas_used + verkle_results['total_gas_effect']
+    post_verkle_gas_used = pre_verkle_gas_used + verkle_results['total_gas_cost_difference']
     return [case['name'], pre_verkle_gas_used, post_verkle_gas_used]
 
 
@@ -244,7 +244,7 @@ def write_csv(rows):
 if len(args) > 0 and os.path.exists(args[0]):
     with open(args[0], 'r') as f:
         cast_output = f.read()
-        estimate_verkle_effect(cast_output, names)
+        estimate_verkle_gas_cost_difference(cast_output, names)
 elif len(test_cases) > 0:
     evaluated = []
     lastpre = 0

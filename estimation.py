@@ -21,13 +21,7 @@ SSTORE_SET_GAS = 20000
 WARM_STORAGE_READ_COST = 100
 
 
-def calculate_deployment_gas_effect(contract_size):
-    code_chunks = contract_size // 31
-    code_subtrees = math.ceil((code_chunks + CODE_OFFSET) / 256)
-    return CHUNK_FILL_COST * code_chunks + SUBTREE_EDIT_COST * code_subtrees
-
-
-def calculate_chunks_read_verkle_effect(contract_chunks):
+def calculate_chunks_read_verkle_gas_cost(contract_chunks):
     # NOTE: subtree 0 initialization cost will be tracked here
     branches_access_events = {}
 
@@ -56,7 +50,7 @@ def get_slot_verkle_id(storage_key_hex):
 
 #  subtract current costs and apply new costs
 def calculate_slots_verkle_difference(contract_slots):
-    # NOTE: subtree 0 is already initialized in "calculate_chunks_read_verkle_effect"
+    # NOTE: subtree 0 is already initialized in "calculate_chunks_read_verkle_gas_cost"
     accessed_subtrees = {0: True}
     accessed_leaves = {}
     edited_subtrees = {}
@@ -158,10 +152,10 @@ def get_name(address, names):
         return names[address] + " " + short_address
 
 
-def estimate_verkle_effect(trace_data, names):
+def estimate_verkle_gas_cost_difference(trace_data, names):
     results = {
         'per_contract_result': {},
-        'total_gas_effect': 0
+        'total_gas_cost_difference': 0
     }
 
     # Dump number of unique slots used by each address
@@ -170,7 +164,7 @@ def estimate_verkle_effect(trace_data, names):
         max_chunk = max(chunks[addr].keys())
         num_chunks = len(chunks[addr])
 
-        addr_code_cost = calculate_chunks_read_verkle_effect(chunks[addr])
+        addr_code_cost = calculate_chunks_read_verkle_gas_cost(chunks[addr])
 
         addr_storage_difference = 0
         addr_storage_removed_refund = 0
@@ -211,11 +205,11 @@ def estimate_verkle_effect(trace_data, names):
         }
 
         results['per_contract_result'][addr] = per_contract_result
-        results['total_gas_effect'] += per_contract_diff
+        results['total_gas_cost_difference'] += per_contract_diff
 
     # touching an extra address is per-transaction and cannot be tracked per-contract
     address_touching_opcode_cost_difference = calculate_touching_opcode_cost_difference(trace_data)
     results['address_touching_opcode_cost_difference'] = address_touching_opcode_cost_difference
-    results['total_gas_effect'] += address_touching_opcode_cost_difference
+    results['total_gas_cost_difference'] += address_touching_opcode_cost_difference
 
     return results

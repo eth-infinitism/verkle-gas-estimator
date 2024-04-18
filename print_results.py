@@ -1,4 +1,5 @@
-def print_results(results, dumpall):
+def print_results(case, total_gas_used, results, dumpall):
+    print(case)
     for address in results['per_contract_result']:
         result = results['per_contract_result'][address]
 
@@ -13,8 +14,15 @@ def print_results(results, dumpall):
         print(f"CREATE2 cost diff: {result['create2_opcode_cost_difference']}")
         if dumpall:
             print(f", all chunks={','.join(map(str, result['chunks'][result['addrress']].keys()))}")
-        print("Contract Verkle gas effect = " + str(result['per_contract_diff']))
+        print("Contract Verkle gas cost difference = " + str(result['per_contract_diff']))
         print("")
-    print(f"address touching opcodes cost diff: {results['address_touching_opcode_cost_difference']}")
+
+    touching_opcodes = results['address_touching_opcode_cost_difference']
+    if touching_opcodes > 0:
+        print(f"address touching opcodes cost diff: {touching_opcodes}")
+
     print("")
-    print("Total Verkle gas effect = " + str(results['total_gas_effect']))
+    print("Pre-Verkle transaction gas used: " + str(total_gas_used))
+    print("Post-Verkle gas cost difference: " + str(results['total_gas_cost_difference']))
+    print("Post-Verkle estimation gas used: " + str(total_gas_used + results['total_gas_cost_difference']))
+    print("")
