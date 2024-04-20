@@ -33,7 +33,7 @@ def calculate_chunks_read_verkle_gas_cost(contract_chunks):
     return code_cost
 
 
-def get_slot_verkle_id(storage_key_hex):
+def get_storage_slot_tree_keys(storage_key_hex):
     storage_key = int(storage_key_hex, 16)
     # special storage for slots 0..64
     if storage_key < (CODE_OFFSET - HEADER_STORAGE_OFFSET):
@@ -58,10 +58,10 @@ def calculate_slots_verkle_difference(contract_slots):
     old_cost = 0
     for slot_id in contract_slots:
         slot = contract_slots[slot_id]
-        [branch_id, sub_id] = get_slot_verkle_id(slot_id)
+        [branch_id, sub_id] = get_storage_slot_tree_keys(slot_id)
         for opcode in slot:
             old_cost += opcode['gas']
-            if opcode['opcode'] == 'SSTORE':
+            if opcode['opcode'] == 'SSTORE' or opcode['opcode'] == 'SLOAD':
                 if branch_id in edited_subtrees and sub_id in edited_leaves:
                     new_costs += WARM_STORAGE_READ_COST  # this is not explicitly specified by EIP-4762
                 if branch_id not in edited_subtrees:
@@ -77,7 +77,7 @@ def calculate_slots_verkle_difference(contract_slots):
                     else:
                         new_costs += CHUNK_EDIT_COST
 
-            elif opcode['opcode'] == 'SLOAD':
+            if opcode['opcode'] == 'SLOAD':
                 if branch_id in accessed_subtrees and sub_id in accessed_leaves:
                     new_costs += WARM_STORAGE_READ_COST  # this is not explicitly specified by EIP-4762
                 if branch_id not in accessed_subtrees:
@@ -88,8 +88,7 @@ def calculate_slots_verkle_difference(contract_slots):
                         accessed_leaves[branch_id] = {}
                     accessed_leaves[branch_id][sub_id] = True
                     new_costs += WITNESS_CHUNK_COST
-            else:
-                raise Exception("Unknown opcode " + slot['opcode'])
+
     return new_costs - old_cost
 
 
