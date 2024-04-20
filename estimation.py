@@ -1,5 +1,3 @@
-import math
-
 HEADER_STORAGE_OFFSET = 64
 CODE_OFFSET = 128
 VERKLE_NODE_WIDTH = 256
@@ -70,10 +68,12 @@ def calculate_slots_verkle_difference(contract_slots):
                     new_costs += SUBTREE_EDIT_COST
                     edited_subtrees[branch_id] = True
                 if sub_id not in edited_leaves:
-                    new_costs += CHUNK_EDIT_COST
                     edited_leaves[branch_id] = True
                     if opcode['gas'] == SSTORE_SET_GAS:  # considering pre-verkle value 0 as equivalent to 'None'
+                        print(f"Note: detected a 20000 gas SSTORE which may disproportionately affect Verkle gas costs")
                         new_costs += CHUNK_FILL_COST
+                    else:
+                        new_costs += CHUNK_EDIT_COST
 
             elif opcode['opcode'] == 'SLOAD':
                 if branch_id in accessed_subtrees and sub_id in accessed_leaves:
