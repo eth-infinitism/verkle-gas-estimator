@@ -61,7 +61,7 @@ def calculate_slots_verkle_difference(contract_slots):
         [branch_id, sub_id] = get_storage_slot_tree_keys(slot_id)
         for opcode in slot:
             old_cost += opcode['gas']
-            if opcode['opcode'] == 'SSTORE' or opcode['opcode'] == 'SLOAD':
+            if opcode['opcode'] == 'SSTORE':
                 if branch_id in edited_subtrees and sub_id in edited_leaves[branch_id]:
                     new_costs += WARM_STORAGE_READ_COST  # this is not explicitly specified by EIP-4762
                 if branch_id not in edited_subtrees:
@@ -77,7 +77,9 @@ def calculate_slots_verkle_difference(contract_slots):
                     else:
                         new_costs += CHUNK_EDIT_COST
 
-            if opcode['opcode'] == 'SLOAD':
+            # SLOAD and SSTORE opcodes with a given address and key process
+            # an access event of the form (address, tree_key, sub_key)
+            if opcode['opcode'] == 'SLOAD' or opcode['opcode'] == 'SSTORE':
                 if branch_id in accessed_subtrees and sub_id in accessed_leaves[branch_id]:
                     new_costs += WARM_STORAGE_READ_COST  # this is not explicitly specified by EIP-4762
                 if branch_id not in accessed_subtrees:
