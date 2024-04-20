@@ -1,4 +1,5 @@
 from typing import Set, Tuple
+
 address = str
 
 WITNESS_BRANCH_COST = 1900
@@ -7,12 +8,53 @@ SUBTREE_EDIT_COST = 3000
 CHUNK_EDIT_COST = 500
 CHUNK_FILL_COST = 6200
 
+VERSION_LEAF_KEY = 0
+BALANCE_LEAF_KEY = 1
+NONCE_LEAF_KEY = 2
+CODE_KECCAK_LEAF_KEY = 3
+CODE_SIZE_LEAF_KEY = 4
+HEADER_STORAGE_OFFSET = 64
+CODE_OFFSET = 128
+VERKLE_NODE_WIDTH = 256
+MAIN_STORAGE_OFFSET = 256 ** 31
+
 accessed_subtrees: Set[Tuple[address, int]] = {}
 accessed_leaves: Set[Tuple[address, int, int]] = {}
 edited_subtrees: Set[Tuple[address, int]] = {}
 edited_leaves: Set[Tuple[address, int, int]] = {}
 
 total_cost: int = 0
+
+
+def handle_opcode(opcode: str, addr: address, stack: list[str], mpt_gas: int, mpt_refund: int):
+    """
+    :param addr: current storage address
+    :param opcode: opcode name
+    :param stack - current stack
+    :param mpt_gas:
+    :param mpt_refund:
+    :return:
+    """
+    if opcode == 'SLOAD':
+        slot = int(stack[-1])
+        (subkey, leafkey) = get_storage_slot_tree_keys(slot)
+        access_event(addr, subkey, leafkey)
+        #todo: compensate MPT cost
+    elif opcode == 'SSTORE':
+        slot = int(stack[-1])
+        (subkey, leafkey) = get_storage_slot_tree_keys(slot)
+        write_event(addr, subkey, leafkey)
+        #todo: compensate MPT cost
+    elif opcode == 'BALANCE':
+        access_event(address, 0, BALANCE_LEAF_KEY)
+    elif opcode == 'EXTCODEHASH':
+        access_event(address, 0, CODE_KECCAK_LEAF_KEY)
+    elif opcode in ['CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL']:
+        calladdr = stack[-2]
+        access_event()
+    else:
+        "normal opcodes - no changes in gas cost from MPT"
+        pass
 
 
 def reset_transaction():
@@ -26,6 +68,17 @@ def reset_transaction():
     accessed_leaves.clear()
     edited_subtrees.clear()
     edited_leaves.clear()
+
+
+def get_storage_slot_tree_keys(storage_key: int) -> [int, int]:
+    if storage_key < (CODE_OFFSET - HEADER_STORAGE_OFFSET):
+        pos = HEADER_STORAGE_OFFSET + storage_key
+    else:
+        pos = MAIN_STORAGE_OFFSET + storage_key
+    return (
+        pos // 256,
+        pos % 256
+    )
 
 
 def access_event(addr: address, sub_key: int, leaf_key: int):
@@ -43,7 +96,7 @@ def access_event(addr: address, sub_key: int, leaf_key: int):
     total_cost += new_costs
 
 
-def write_event(addr: address, sub_key: int, leaf_key: int, storage_not_none = False) -> int:
+def write_event(addr: address, sub_key: int, leaf_key: int, storage_not_none=False) -> int:
     """
         When a write event of (address, sub_key, leaf_key) occurs, perform the following checks:
 
