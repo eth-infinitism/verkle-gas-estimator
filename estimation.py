@@ -67,8 +67,10 @@ def calculate_slots_verkle_difference(contract_slots):
                 if branch_id not in edited_subtrees:
                     new_costs += SUBTREE_EDIT_COST
                     edited_subtrees[branch_id] = True
-                if sub_id not in edited_leaves:
-                    edited_leaves[branch_id] = True
+                if branch_id not in edited_leaves or sub_id not in edited_leaves[branch_id]:
+                    if branch_id not in edited_leaves:
+                        edited_leaves[branch_id] = {}
+                    edited_leaves[branch_id][sub_id] = True
                     if opcode['gas'] == SSTORE_SET_GAS:  # considering pre-verkle value 0 as equivalent to 'None'
                         print(f"Note: detected a 20000 gas SSTORE which may disproportionately affect Verkle gas costs")
                         new_costs += CHUNK_FILL_COST
@@ -81,9 +83,11 @@ def calculate_slots_verkle_difference(contract_slots):
                 if branch_id not in accessed_subtrees:
                     new_costs += WITNESS_BRANCH_COST
                     accessed_subtrees[branch_id] = True
-                if sub_id not in accessed_leaves:
+                if branch_id not in accessed_leaves or sub_id not in accessed_leaves[branch_id]:
+                    if branch_id not in accessed_leaves:
+                        accessed_leaves[branch_id] = {}
+                    accessed_leaves[branch_id][sub_id] = True
                     new_costs += WITNESS_CHUNK_COST
-                    accessed_leaves[branch_id] = True
             else:
                 raise Exception("Unknown opcode " + slot['opcode'])
     return new_costs - old_cost
