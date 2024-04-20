@@ -50,7 +50,7 @@ def get_storage_slot_tree_keys(storage_key_hex):
 def calculate_slots_verkle_difference(contract_slots):
     # NOTE: subtree 0 is already initialized in "calculate_chunks_read_verkle_gas_cost"
     accessed_subtrees = {0: True}
-    accessed_leaves = {}
+    accessed_leaves = {0: {}}
     edited_subtrees = {}
     edited_leaves = {}
 
@@ -67,9 +67,8 @@ def calculate_slots_verkle_difference(contract_slots):
                 if branch_id not in edited_subtrees:
                     new_costs += SUBTREE_EDIT_COST
                     edited_subtrees[branch_id] = True
-                if branch_id not in edited_leaves or sub_id not in edited_leaves[branch_id]:
-                    if branch_id not in edited_leaves:
-                        edited_leaves[branch_id] = {}
+                    edited_leaves[branch_id] = {}
+                if sub_id not in edited_leaves[branch_id]:
                     edited_leaves[branch_id][sub_id] = True
                     if opcode['gas'] == SSTORE_SET_GAS:  # considering pre-verkle value 0 as equivalent to 'None'
                         print(f"Note: detected a 20000 gas SSTORE which may disproportionately affect Verkle gas costs")
@@ -85,9 +84,8 @@ def calculate_slots_verkle_difference(contract_slots):
                 if branch_id not in accessed_subtrees:
                     new_costs += WITNESS_BRANCH_COST
                     accessed_subtrees[branch_id] = True
-                if branch_id not in accessed_leaves or sub_id not in accessed_leaves[branch_id]:
-                    if branch_id not in accessed_leaves:
-                        accessed_leaves[branch_id] = {}
+                    accessed_leaves[branch_id] = {}
+                if sub_id not in accessed_leaves[branch_id]:
                     accessed_leaves[branch_id][sub_id] = True
                     new_costs += WITNESS_CHUNK_COST
 
